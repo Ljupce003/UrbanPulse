@@ -1,0 +1,60 @@
+# ----------------------
+# Python / FastAPI
+# ----------------------
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.env/
+.venv/
+
+# Environment variables
+.env
+.env.*
+
+# Python build files
+build/
+dist/
+*.egg-info/
+
+# Logs
+*.log
+
+# SQLite (if used)
+*.sqlite3
+
+# Testing / coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# ----------------------
+# Uvicorn / FastAPI
+# ----------------------
+*.pid
+*.sock
+
+# ----------------------
+# PyCharm / IntelliJ
+# ----------------------
+.idea/
+*.iml
+
+# ----------------------
+# OS files
+# ----------------------
+.DS_Store
+Thumbs.db
+
+# ----------------------
+# VS Code (optional)
+# ----------------------
+.vscode/
+
+# ----------------------
+# Misc
+# ----------------------
+*.swp
+*.swo
