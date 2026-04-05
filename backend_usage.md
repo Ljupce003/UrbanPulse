@@ -10,7 +10,7 @@ pip install -r requirements.txt
 Start the development server:
 
 ```bash
-uvicorn app.main:app --reload
+uvicorn backend.main:app --reload
 ```
 
 The API will be available at:

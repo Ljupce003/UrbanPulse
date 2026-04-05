@@ -1,4 +1,4 @@
-from app.models.status import ServiceStatus
+from backend.models import ServiceStatus
 
 
 def get_status_payload() -> dict:

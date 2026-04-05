@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
-from app.core import settings
-from app.routers import status_router
+from backend.core import settings
+from backend.routers import status_router
 
 app = FastAPI(title=settings.app_name)
 app.include_router(status_router, prefix=settings.api_prefix)
