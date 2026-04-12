@@ -1,0 +1,286 @@
+import { useAuth } from '../context/AuthContext'
+
+const ROLE_LABEL = {
+  admin:        'Administrator',
+  analyst:      'Analyst',
+  general_user: 'General User',
+}
+
+const STAT_CARDS = [
+  {
+    id: 'aqi', label: 'AIR QUALITY INDEX', value: '—', unit: 'AQI',
+    status: 'LOADING', statusColor: '#3b82f6',
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M12 2a7 7 0 017 7c0 5.25-7 13-7 13S5 14.25 5 9a7 7 0 017-7z"/>
+        <circle cx="12" cy="9" r="2.5"/>
+      </svg>
+    ),
+    accent: '#10b981',
+  },
+  {
+    id: 'traffic', label: 'TRAFFIC STATUS', value: '—', unit: '',
+    status: 'LOADING', statusColor: '#3b82f6',
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <rect x="9" y="2" width="6" height="20" rx="3"/>
+        <circle cx="12" cy="7" r="1.5" fill="currentColor" stroke="none"/>
+        <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" opacity="0.4"/>
+        <circle cx="12" cy="17" r="1.5" fill="currentColor" stroke="none" opacity="0.2"/>
+      </svg>
+    ),
+    accent: '#f59e0b',
+  },
+  {
+    id: 'weather', label: 'TEMPERATURE', value: '—', unit: '°C',
+    status: 'LOADING', statusColor: '#3b82f6',
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M12 2v10M12 2a3 3 0 013 3v7a5 5 0 11-6 0V5a3 3 0 013-3z"/>
+      </svg>
+    ),
+    accent: '#3b82f6',
+  },
+]
+
+const QUICK_ACTIONS = [
+  { label: 'POLLUTION ANALYZER', desc: 'Break down pollution contribution factors', to: '/analyzer', roles: ['general_user','analyst','admin'] },
+  { label: 'SCENARIO SIMULATOR', desc: 'Simulate rainfall, traffic, and pollution impact', to: '/simulate', roles: ['general_user','analyst','admin'] },
+  { label: 'DATA MANAGEMENT', desc: 'Upload and normalize datasets', to: '/data', roles: ['analyst','admin'] },
+  { label: 'USER MANAGEMENT', desc: 'Manage roles and permissions', to: '/admin/users', roles: ['admin'] },
+]
+
+export default function Home() {
+  const { profile, role } = useAuth()
+  const visibleActions = QUICK_ACTIONS.filter(a => a.roles.includes(role))
+
+  return (
+    <div>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap');
+        body {
+          margin: 0;
+          overflow-x: hidden !important;
+
+        }
+        .home-page {
+          min-height: 100vh; background: #080c14;
+          padding: 80px 0 60px;
+          font-family: 'DM Sans', sans-serif;
+          position: relative; overflow: hidden;
+          width: 100vw;
+        }
+
+        .home-bg-grid {
+          position: absolute; inset: 0; pointer-events: none; opacity: 0.1;
+          background-image:
+            linear-gradient(rgba(59,130,246,0.5) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(59,130,246,0.5) 1px, transparent 1px);
+          background-size: 48px 48px;
+        }
+        .home-bg-blob {
+          position: absolute; border-radius: 50%; pointer-events: none;
+        }
+
+        .home-content {
+          position: relative; z-index: 1;
+          max-width: 1100px; margin: 0 auto; padding: 0 32px;
+        }
+
+        /* ── Hero ── */
+        .home-hero { padding: 48px 0 40px; }
+        .hero-eyebrow {
+          font-family: 'Space Mono', monospace;
+          font-size: 15px; letter-spacing: 0.25em;
+          color: #3b82f6; margin-bottom: 14px;
+          display: flex; align-items: center; gap: 8px;
+        }
+        .hero-eyebrow::before {
+          content: ''; width: 24px; height: 1px; background: #3b82f6; opacity: 0.6;
+        }
+        .hero-title {
+          font-family: 'Space Mono', monospace;
+          font-size: clamp(28px, 4vw, 44px); font-weight: 700;
+          color: #f0f4ff; letter-spacing: -0.03em; line-height: 1.1;
+          margin-bottom: 10px;
+        }
+        .hero-title span { color: #3b82f6; }
+        .hero-sub {
+          font-size: 15px; color: rgba(148,163,184);
+          font-weight: 300; line-height: 1.6;
+          max-width: 520px;
+        }
+
+        /* ── Stat cards ── */
+        .section-label {
+          font-family: 'Space Mono', monospace;
+          font-size: 14px; letter-spacing: 0.25em;
+          color: rgba(100,116,139); margin-bottom: 16px;
+        }
+
+        .stats-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+          gap: 16px; margin-bottom: 48px;
+        }
+
+        .stat-card {
+          background: rgba(10,16,28,0.7);
+          border: 1px solid rgba(59,130,246,0.1);
+          border-radius: 4px; padding: 24px;
+          position: relative; overflow: hidden;
+          transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .stat-card:hover {
+          border-color: rgba(59,130,246,0.25);
+          box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+        .stat-card-top {
+          display: flex; justify-content: space-between;
+          align-items: flex-start; margin-bottom: 20px;
+        }
+        .stat-label-text {
+          font-family: 'Space Mono', monospace;
+          font-size: 9px; letter-spacing: 0.2em;
+          color: whitesmoke;
+        }
+        .stat-value-row { display: flex; align-items: baseline; gap: 6px; }
+        .stat-value {
+          font-family: 'Space Mono', monospace;
+          font-size: 36px; font-weight: 700;
+          color: #f0f4ff; letter-spacing: -0.03em; line-height: 1;
+        }
+        .stat-unit {
+          font-family: 'Space Mono', monospace;
+          font-size: 13px; color: rgba(148,163,184,0.4);
+        }
+        .stat-status {
+          margin-top: 12px;
+          font-family: 'Space Mono', monospace;
+          font-size: 9px; letter-spacing: 0.15em;
+          display: flex; align-items: center; gap: 6px;
+        }
+        .stat-status-dot { width: 5px; height: 5px; border-radius: 50%; }
+        .stat-accent-line {
+          position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+          opacity: 0.3;
+        }
+
+        /* ── Quick actions ── */
+        .actions-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+          gap: 12px;
+        }
+
+        .action-card {
+          background: rgba(10,16,28,0.5);
+          border: 1px solid rgba(59,130,246,0.08);
+          border-radius: 4px; padding: 20px;
+          cursor: pointer; text-decoration: none;
+          transition: all 0.2s ease; display: block;
+          position: relative;
+        }
+        .action-card:hover {
+          border-color: rgba(59,130,246,0.25);
+          background: rgba(59,130,246,0.04);
+          transform: translateY(-2px);
+        }
+        .action-label {
+          font-family: 'Space Mono', monospace;
+          font-size: 10px; font-weight: 700; letter-spacing: 0.15em;
+          color: #e2e8f0; margin-bottom: 8px;
+        }
+        .action-desc {
+          font-size: 12px; color: rgba(148,163,184,0.45);
+          font-weight: 300; line-height: 1.5;
+        }
+        .action-arrow {
+          position: absolute; top: 20px; right: 20px;
+          font-family: 'Space Mono', monospace;
+          font-size: 14px; color: rgba(59,130,246,0.3);
+          transition: all 0.2s ease;
+        }
+        .action-card:hover .action-arrow {
+          color: #3b82f6; transform: translate(2px, -2px);
+        }
+      `}
+      </style>
+
+      <div className="home-page">
+        <div className="home-bg-grid" />
+        <div className="home-bg-blob" style={{
+          top: '-10%', right: '-5%', width: 500, height: 500,
+          background: 'radial-gradient(circle, rgba(59,130,246,0.07) 0%, transparent 70%)',
+        }} />
+        <div className="home-bg-blob" style={{
+          bottom: '-5%', left: '-8%', width: 400, height: 400,
+          background: 'radial-gradient(circle, rgba(16,185,129,0.05) 0%, transparent 70%)',
+        }} />
+
+        <div className="home-content">
+
+          {/* Hero */}
+          <div className="home-hero">
+            <div className="hero-eyebrow">
+              WELCOME BACK, {profile?.full_name?.split(' ')[0]?.toUpperCase() || 'USER'}
+              &nbsp;·&nbsp;
+              {ROLE_LABEL[role] || 'General User'}
+            </div>
+            <h1 className="hero-title">
+              Urban<span>Pulse</span><br />Dashboard
+            </h1>
+            <p className="hero-sub">
+              Real-time traffic, air quality, and weather intelligence for your city.
+            </p>
+          </div>
+
+          {/* Live Stats */}
+          <div className="section-label">LIVE CONDITIONS</div>
+          <div className="stats-grid">
+            {STAT_CARDS.map(card => (
+              <div key={card.id} className="stat-card">
+                <div className="stat-card-top">
+                  <div className="stat-label-text">{card.label}</div>
+                  <div className="stat-icon" style={{ color: card.accent }}>
+                    {card.icon}
+                  </div>
+                </div>
+                <div className="stat-value-row">
+                  <div className="stat-value">{card.value}</div>
+                  <div className="stat-unit">{card.unit}</div>
+                </div>
+                <div className="stat-status">
+                  <div
+                    className="stat-status-dot"
+                    style={{ background: card.statusColor, animation: 'nbpulse 2s infinite' }}
+                  />
+                  <span style={{ color: 'rgba(100,116,139,0.5)' }}>{card.status}</span>
+                </div>
+                <div className="stat-accent-line" style={{ background: card.accent }} />
+              </div>
+            ))}
+          </div>
+
+          {/* Quick actions filtered by role */}
+          {visibleActions.length > 0 && (
+            <>
+              <div className="section-label">QUICK ACCESS</div>
+              <div className="actions-grid">
+                {visibleActions.map(action => (
+                  <a key={action.to} href={action.to} className="action-card">
+                    <div className="action-label">{action.label}</div>
+                    <div className="action-desc">{action.desc}</div>
+                    <div className="action-arrow">↗</div>
+                  </a>
+                ))}
+              </div>
+            </>
+          )}
+
+        </div>
+      </div>
+      <style>{`@keyframes nbpulse { 0%,100%{opacity:1} 50%{opacity:0.8} }`}</style>
+    </div>
+  )
+}

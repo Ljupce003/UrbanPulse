@@ -1,2 +1,8 @@
 fastapi
+supabase
+dotenv
+passlib
+pydantic[email]
+hypercorn
+PyJWT
 uvicorn
