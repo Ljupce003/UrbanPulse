@@ -85,6 +85,14 @@ The system goes beyond simple data visualization by identifying patterns, genera
 * `POST /api/data/normalize` – trigger data processing
 * `PATCH /api/admin/users/{id}/role` – role updates
 
+### Weather
+
+* `GET /api/weather/current` – current weather by `city` or `lat/lon`
+* `GET /api/weather/cities` – list cached city coordinates
+* `POST /api/weather/cities` – add city manually (admin)
+* `PATCH /api/weather/cities/{city_id}` – edit city fields partially (admin)
+* `DELETE /api/weather/cities/{city_id}` – delete city manually (admin)
+
 ### Authentication
 
 * `POST /api/v1/auth/signup`

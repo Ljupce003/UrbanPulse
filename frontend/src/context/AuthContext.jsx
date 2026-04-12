@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
 import { supabase } from '../lib/supabaseClient'
 
 const AuthContext = createContext(null)
-const API = import.meta.env.VITE_API_URL || 'http://localhost:5173'
+const API = (import.meta.env.VITE_API_URL || 'http://localhost:5173').replace(/\/+$/, '')
 
 export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null)
