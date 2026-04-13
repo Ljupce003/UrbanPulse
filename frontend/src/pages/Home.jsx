@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 
 const ROLE_LABEL = {
@@ -6,7 +7,7 @@ const ROLE_LABEL = {
   general_user: 'General User',
 }
 
-const STAT_CARDS = [
+const BASE_STAT_CARDS = [
   {
     id: 'aqi', label: 'AIR QUALITY INDEX', value: '—', unit: 'AQI',
     status: 'LOADING', statusColor: '#3b82f6',
@@ -43,6 +44,13 @@ const STAT_CARDS = [
   },
 ]
 
+const API = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8080').replace(/\/+$/, '')
+const DEFAULT_CITY = import.meta.env.VITE_DEFAULT_WEATHER_CITY || 'Bitola'
+const DEFAULT_COUNTRY = import.meta.env.VITE_DEFAULT_WEATHER_COUNTRY_CODE || 'MK'
+const WEATHER_REFRESH_MS = Number(import.meta.env.VITE_WEATHER_REFRESH_MS || 60000)
+const WEATHER_CLIENT_CACHE_MS = Number(import.meta.env.VITE_WEATHER_CLIENT_CACHE_MS || 300000)
+const WEATHER_CACHE_KEY = `urbanpulse:weather:${DEFAULT_CITY}:${DEFAULT_COUNTRY}`
+
 const QUICK_ACTIONS = [
   { label: 'POLLUTION ANALYZER', desc: 'Break down pollution contribution factors', to: '/analyzer', roles: ['general_user','analyst','admin'] },
   { label: 'SCENARIO SIMULATOR', desc: 'Simulate rainfall, traffic, and pollution impact', to: '/simulate', roles: ['general_user','analyst','admin'] },
@@ -53,6 +61,105 @@ const QUICK_ACTIONS = [
 export default function Home() {
   const { profile, role } = useAuth()
   const visibleActions = QUICK_ACTIONS.filter(a => a.roles.includes(role))
+  const [weatherData, setWeatherData] = useState(null)
+  const [weatherStatus, setWeatherStatus] = useState('LOADING')
+
+  const weatherLocationLabel = useMemo(() => {
+    const city = weatherData?.location?.city || DEFAULT_CITY
+    const country = weatherData?.location?.country_code || DEFAULT_COUNTRY
+    return country ? `${city}, ${country}` : city
+  }, [weatherData])
+
+  useEffect(() => {
+    let cancelled = false
+    let inFlight = false
+
+    const readCached = () => {
+      try {
+        const raw = localStorage.getItem(WEATHER_CACHE_KEY)
+        if (!raw) return null
+        const parsed = JSON.parse(raw)
+        if (!parsed?.data || !parsed?.ts) return null
+        if (Date.now() - parsed.ts > WEATHER_CLIENT_CACHE_MS) return null
+        return parsed.data
+      } catch {
+        return null
+      }
+    }
+
+    const writeCached = (data) => {
+      localStorage.setItem(WEATHER_CACHE_KEY, JSON.stringify({ ts: Date.now(), data }))
+    }
+
+    const cached = readCached()
+    if (cached) {
+      setWeatherData(cached)
+      setWeatherStatus('CACHED')
+    }
+
+    const fetchWeather = async () => {
+      if (inFlight) return
+      inFlight = true
+      try {
+        const params = new URLSearchParams({
+          city: DEFAULT_CITY,
+          units: 'metric',
+        })
+        if (DEFAULT_COUNTRY) params.set('country_code', DEFAULT_COUNTRY)
+
+        const res = await fetch(`${API}/api/weather/current?${params.toString()}`)
+        const json = await res.json().catch(() => null)
+        if (!res.ok) {
+          if (!cancelled) {
+            setWeatherStatus(cached ? 'CACHED' : 'UNAVAILABLE')
+            console.warn('[Home] weather fetch failed:', json?.detail || `Weather error ${res.status}`)
+          }
+          return
+        }
+
+        if (!cancelled) {
+          setWeatherData(json)
+          setWeatherStatus('LIVE')
+          writeCached(json)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setWeatherStatus(cached ? 'CACHED' : 'UNAVAILABLE')
+          console.warn('[Home] weather fetch failed:', err.message)
+        }
+      } finally {
+        inFlight = false
+      }
+    }
+
+    fetchWeather()
+    const timer = setInterval(fetchWeather, WEATHER_REFRESH_MS)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [])
+
+  const statCards = useMemo(() => {
+    return BASE_STAT_CARDS.map((card) => {
+      if (card.id !== 'weather') return card
+      if (!weatherData) {
+        return {
+          ...card,
+          status: weatherStatus,
+          statusColor: weatherStatus === 'UNAVAILABLE' ? '#ef4444' : '#3b82f6',
+        }
+      }
+
+      return {
+        ...card,
+        value: Number(weatherData.main?.temp ?? 0).toFixed(1),
+        unit: 'degC',
+        status: `${weatherData.weather?.main || 'WEATHER'} | ${weatherLocationLabel} | ${weatherStatus}`,
+        statusColor: weatherStatus === 'LIVE' ? '#10b981' : '#3b82f6',
+      }
+    })
+  }, [weatherData, weatherStatus, weatherLocationLabel])
 
   return (
     <div>
@@ -109,6 +216,40 @@ export default function Home() {
           font-size: 15px; color: rgba(148,163,184);
           font-weight: 300; line-height: 1.6;
           max-width: 520px;
+        }
+        .hero-weather-chip {
+          margin-top: 16px;
+          display: inline-flex;
+          align-items: center;
+          gap: 12px;
+          padding: 12px 16px;
+          border-radius: 8px;
+          border: 1px solid rgba(59,130,246,0.3);
+          background: linear-gradient(135deg, rgba(59,130,246,0.18), rgba(59,130,246,0.05));
+          box-shadow: 0 8px 20px rgba(0,0,0,0.22);
+        }
+        .hero-weather-label {
+          font-family: 'Space Mono', monospace;
+          font-size: 10px;
+          letter-spacing: 0.16em;
+          color: rgba(148,163,184,0.75);
+        }
+        .hero-weather-value {
+          font-family: 'Space Mono', monospace;
+          font-size: 18px;
+          font-weight: 700;
+          letter-spacing: 0.03em;
+          color: #e2e8f0;
+        }
+        .hero-weather-status {
+          font-family: 'Space Mono', monospace;
+          font-size: 10px;
+          letter-spacing: 0.12em;
+          color: #3b82f6;
+          border: 1px solid rgba(59,130,246,0.35);
+          border-radius: 999px;
+          padding: 4px 8px;
+          background: rgba(59,130,246,0.1);
         }
 
         /* ── Stat cards ── */
@@ -233,12 +374,17 @@ export default function Home() {
             <p className="hero-sub">
               Real-time traffic, air quality, and weather intelligence for your city.
             </p>
+            <div className="hero-weather-chip" aria-label="Current weather location">
+              <div className="hero-weather-label">ACTIVE WEATHER LOCATION</div>
+              <div className="hero-weather-value">{weatherLocationLabel}</div>
+              <div className="hero-weather-status">{weatherStatus}</div>
+            </div>
           </div>
 
           {/* Live Stats */}
           <div className="section-label">LIVE CONDITIONS</div>
           <div className="stats-grid">
-            {STAT_CARDS.map(card => (
+            {statCards.map(card => (
               <div key={card.id} className="stat-card">
                 <div className="stat-card-top">
                   <div className="stat-label-text">{card.label}</div>
