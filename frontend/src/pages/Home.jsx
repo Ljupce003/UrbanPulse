@@ -50,6 +50,9 @@ const DEFAULT_COUNTRY = import.meta.env.VITE_DEFAULT_WEATHER_COUNTRY_CODE || 'MK
 const WEATHER_REFRESH_MS = Number(import.meta.env.VITE_WEATHER_REFRESH_MS || 60000)
 const WEATHER_CLIENT_CACHE_MS = Number(import.meta.env.VITE_WEATHER_CLIENT_CACHE_MS || 300000)
 const WEATHER_CACHE_KEY = `urbanpulse:weather:${DEFAULT_CITY}:${DEFAULT_COUNTRY}`
+const AQI_REFRESH_MS = Number(import.meta.env.VITE_AQI_REFRESH_MS || 60000)
+const AQI_CLIENT_CACHE_MS = Number(import.meta.env.VITE_AQI_CLIENT_CACHE_MS || 300000)
+const AQI_CACHE_KEY = `urbanpulse:aqi:${DEFAULT_CITY}:${DEFAULT_COUNTRY}`
 
 const QUICK_ACTIONS = [
   { label: 'POLLUTION ANALYZER', desc: 'Break down pollution contribution factors', to: '/analyzer', roles: ['general_user','analyst','admin'] },
@@ -63,12 +66,22 @@ export default function Home() {
   const visibleActions = QUICK_ACTIONS.filter(a => a.roles.includes(role))
   const [weatherData, setWeatherData] = useState(null)
   const [weatherStatus, setWeatherStatus] = useState('LOADING')
+  const [aaqiData, setAaqiData] = useState(null)
+  const [aaqiStatus, setAaqiStatus] = useState('LOADING')
 
   const weatherLocationLabel = useMemo(() => {
     const city = weatherData?.location?.city || DEFAULT_CITY
     const country = weatherData?.location?.country_code || DEFAULT_COUNTRY
     return country ? `${city}, ${country}` : city
   }, [weatherData])
+
+  const aqiValue = useMemo(() => {
+    return aaqiData?.aqi_index ?? null
+  }, [aaqiData])
+
+  const aqiLevel = useMemo(() => {
+    return aaqiData?.aqi_level || 'LOADING'
+  }, [aaqiData])
 
   useEffect(() => {
     let cancelled = false
@@ -140,26 +153,116 @@ export default function Home() {
     }
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+    let inFlight = false
+
+    const readAaqiCached = () => {
+      try {
+        const raw = localStorage.getItem(AQI_CACHE_KEY)
+        if (!raw) return null
+        const parsed = JSON.parse(raw)
+        if (!parsed?.data || !parsed?.ts) return null
+        if (Date.now() - parsed.ts > AQI_CLIENT_CACHE_MS) return null
+        return parsed.data
+      } catch {
+        return null
+      }
+    }
+
+    const writeAaqiCached = (data) => {
+      localStorage.setItem(AQI_CACHE_KEY, JSON.stringify({ ts: Date.now(), data }))
+    }
+
+    const cached = readAaqiCached()
+    if (cached) {
+      setAaqiData(cached)
+      setAaqiStatus('CACHED')
+    }
+
+    const fetchAaqi = async () => {
+      if (inFlight) return
+      inFlight = true
+      try {
+        const params = new URLSearchParams({
+          city: DEFAULT_CITY,
+        })
+        if (DEFAULT_COUNTRY) params.set('country_code', DEFAULT_COUNTRY)
+
+        const res = await fetch(`${API}/api/pollution/current?${params.toString()}`)
+        const json = await res.json().catch(() => null)
+        if (!res.ok) {
+          if (!cancelled) {
+            setAaqiStatus(cached ? 'CACHED' : 'UNAVAILABLE')
+            console.warn('[Home] AQI fetch failed:', json?.detail || `Error ${res.status}`)
+          }
+          return
+        }
+
+        if (!cancelled) {
+          setAaqiData(json)
+          setAaqiStatus('LIVE')
+          writeAaqiCached(json)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setAaqiStatus(cached ? 'CACHED' : 'UNAVAILABLE')
+          console.warn('[Home] AQI fetch failed:', err.message)
+        }
+      } finally {
+        inFlight = false
+      }
+    }
+
+    fetchAaqi()
+    const timer = setInterval(fetchAaqi, AQI_REFRESH_MS)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [])
+
   const statCards = useMemo(() => {
     return BASE_STAT_CARDS.map((card) => {
-      if (card.id !== 'weather') return card
-      if (!weatherData) {
+      if (card.id === 'aqi') {
+        if (!aaqiData) {
+          return {
+            ...card,
+            status: aaqiStatus,
+            statusColor: aaqiStatus === 'UNAVAILABLE' ? '#ef4444' : '#3b82f6',
+          }
+        }
+
         return {
           ...card,
-          status: weatherStatus,
-          statusColor: weatherStatus === 'UNAVAILABLE' ? '#ef4444' : '#3b82f6',
+          value: aqiValue !== null ? aqiValue.toString() : '—',
+          unit: 'AQI',
+          status: `${aqiLevel} | ${aaqiStatus}`,
+          statusColor: aaqiStatus === 'LIVE' ? '#10b981' : '#3b82f6',
         }
       }
 
-      return {
-        ...card,
-        value: Number(weatherData.main?.temp ?? 0).toFixed(1),
-        unit: 'degC',
-        status: `${weatherData.weather?.main || 'WEATHER'} | ${weatherLocationLabel} | ${weatherStatus}`,
-        statusColor: weatherStatus === 'LIVE' ? '#10b981' : '#3b82f6',
+      if (card.id === 'weather') {
+        if (!weatherData) {
+          return {
+            ...card,
+            status: weatherStatus,
+            statusColor: weatherStatus === 'UNAVAILABLE' ? '#ef4444' : '#3b82f6',
+          }
+        }
+
+        return {
+          ...card,
+          value: Number(weatherData.main?.temp ?? 0).toFixed(1),
+          unit: 'degC',
+          status: `${weatherData.weather?.main || 'WEATHER'} | ${weatherLocationLabel} | ${weatherStatus}`,
+          statusColor: weatherStatus === 'LIVE' ? '#10b981' : '#3b82f6',
+        }
       }
+
+      return card
     })
-  }, [weatherData, weatherStatus, weatherLocationLabel])
+  }, [weatherData, weatherStatus, weatherLocationLabel, aaqiData, aaqiStatus, aqiValue, aqiLevel])
 
   return (
     <div>

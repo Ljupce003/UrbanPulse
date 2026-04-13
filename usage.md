@@ -56,11 +56,13 @@ VITE_DEFAULT_WEATHER_CITY=Bitola
 VITE_DEFAULT_WEATHER_COUNTRY_CODE=MK
 VITE_WEATHER_REFRESH_MS=60000
 VITE_WEATHER_CLIENT_CACHE_MS=300000
+VITE_AQI_REFRESH_MS=60000
+VITE_AQI_CLIENT_CACHE_MS=300000
 ```
 
 Notes:
 - Keep `VITE_API_URL` without trailing `/`.
-- `VITE_WEATHER_CLIENT_CACHE_MS` is the browser-side cache TTL (in ms).
+- `VITE_WEATHER_CLIENT_CACHE_MS` and `VITE_AQI_CLIENT_CACHE_MS` are browser-side cache TTLs (in ms).
 
 ## Supabase migration needed for city table
 
@@ -125,6 +127,67 @@ Response shape:
 Common errors:
 - `400` invalid query combination
 - `404` city not found
+- `429` provider rate limit
+- `502` upstream/provider issue
+- `503` temporary network/service issue
+
+## Air Quality / Pollution API
+
+Base prefix: `/api/pollution`
+
+### `GET /api/pollution/current`
+
+Returns air quality (AQI) and pollutant levels by city or coordinates.
+
+Input mode rules (same as weather):
+- city mode: `city` required, `country_code` optional
+- coordinate mode: `lat` and `lon` together
+- do not send city and coordinates in same request
+
+Examples:
+
+```bash
+curl "http://127.0.0.1:8080/api/pollution/current?city=Bitola&country_code=MK"
+curl "http://127.0.0.1:8080/api/pollution/current?lat=41.0328&lon=21.3403"
+```
+
+Response shape:
+
+```json
+{
+  "source": "openweather",
+  "location": {
+    "city": "Bitola",
+    "country_code": "MK",
+    "state": null,
+    "lat": 41.0328,
+    "lon": 21.3403
+  },
+  "aqi_index": 62,
+  "aqi_level": "Fair",
+  "components": {
+    "pm2_5": 18.5,
+    "pm10": 28.3,
+    "o3": 45.2,
+    "no2": 12.1,
+    "so2": 5.0,
+    "co": 350.5
+  },
+  "observed_at": 1776046191
+}
+```
+
+**AQI Levels:**
+- `0–50`: Good
+- `51–100`: Fair
+- `101–150`: Moderate
+- `151–200`: Poor
+- `201–300`: Very Poor
+- `300+`: Hazardous
+
+Common errors:
+- `400` invalid query combination
+- `404` location not found
 - `429` provider rate limit
 - `502` upstream/provider issue
 - `503` temporary network/service issue
@@ -209,16 +272,17 @@ Response:
 
 ## Caching strategy (what and why)
 
-### Backend cache (`backend/services/weather_service.py`)
+### Backend cache (weather & pollution)
 
 Two in-memory caches are used:
 - city-resolution cache (`_city_cache`)
 - weather-response cache (`_weather_cache`)
+- pollution/AQI cache (`_aqi_cache`)
 
 TTL is controlled by `WEATHER_CACHE_TTL_SECONDS`.
 
 Why:
-- reduce OpenWeather calls
+- reduce OpenWeatherMap API calls (both weather and pollution use same service)
 - lower latency on repeated requests
 - avoid burning quota for unchanged data
 
@@ -226,11 +290,15 @@ City CRUD invalidates weather caches after create/update/delete, so dashboard do
 
 ### Frontend cache (`frontend/src/pages/Home.jsx`)
 
-`Home` stores latest weather response in `localStorage` with timestamp.
+`Home` stores latest weather and AQI responses in `localStorage` with timestamp.
 
-Controls:
+Controls (weather):
 - refresh interval: `VITE_WEATHER_REFRESH_MS` (default 60s)
 - client cache TTL: `VITE_WEATHER_CLIENT_CACHE_MS` (default 300000 ms = 5 min)
+
+Controls (AQI):
+- refresh interval: `VITE_AQI_REFRESH_MS` (default 60s)
+- client cache TTL: `VITE_AQI_CLIENT_CACHE_MS` (default 300000 ms = 5 min)
 
 Why:
 - page refresh does not always trigger immediate fresh network call

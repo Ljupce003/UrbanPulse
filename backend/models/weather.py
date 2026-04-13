@@ -75,3 +75,20 @@ class CityDeleteResponse(BaseModel):
     city_id: int
 
 
+
+class AirQualityComponents(BaseModel):
+    pm2_5: Optional[float] = None
+    pm10: Optional[float] = None
+    o3: Optional[float] = None
+    no2: Optional[float] = None
+    so2: Optional[float] = None
+    co: Optional[float] = None
+
+
+class AirQualityResponse(BaseModel):
+    source: str = Field(default="openweather")
+    location: CityLocation
+    aqi_index: int
+    aqi_level: str
+    components: AirQualityComponents
+    observed_at: int
