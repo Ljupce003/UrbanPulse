@@ -36,6 +36,11 @@ npm run dev --prefix frontend
 Frontend URL:
 - `http://localhost:5173`
 
+Dashboard city selector:
+- `Home` loads city options from `GET /api/weather/cities?limit=200`
+- picking a city updates weather, AQI, and traffic cards for that city
+- selection is persisted in browser storage and reused on next reload
+
 ## Env setup
 
 ### Backend weather env (`.env` for backend)

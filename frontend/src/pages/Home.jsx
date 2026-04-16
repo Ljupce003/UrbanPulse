@@ -47,15 +47,13 @@ const BASE_STAT_CARDS = [
 const API = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8080').replace(/\/+$/, '')
 const DEFAULT_CITY = import.meta.env.VITE_DEFAULT_WEATHER_CITY || 'Bitola'
 const DEFAULT_COUNTRY = import.meta.env.VITE_DEFAULT_WEATHER_COUNTRY_CODE || 'MK'
+const SELECTED_CITY_STORAGE_KEY = 'urbanpulse:selected_city'
 const WEATHER_REFRESH_MS = Number(import.meta.env.VITE_WEATHER_REFRESH_MS || 60000)
 const WEATHER_CLIENT_CACHE_MS = Number(import.meta.env.VITE_WEATHER_CLIENT_CACHE_MS || 300000)
-const WEATHER_CACHE_KEY = `urbanpulse:weather:${DEFAULT_CITY}:${DEFAULT_COUNTRY}`
 const AQI_REFRESH_MS = Number(import.meta.env.VITE_AQI_REFRESH_MS || 60000)
 const AQI_CLIENT_CACHE_MS = Number(import.meta.env.VITE_AQI_CLIENT_CACHE_MS || 300000)
-const AQI_CACHE_KEY = `urbanpulse:aqi:${DEFAULT_CITY}:${DEFAULT_COUNTRY}`
 const TRAFFIC_REFRESH_MS = Number(import.meta.env.VITE_TRAFFIC_REFRESH_MS || 60000)
 const TRAFFIC_CLIENT_CACHE_MS = Number(import.meta.env.VITE_TRAFFIC_CLIENT_CACHE_MS || 300000)
-const TRAFFIC_CACHE_KEY = `urbanpulse:traffic:${DEFAULT_CITY}:${DEFAULT_COUNTRY}`
 
 const QUICK_ACTIONS = [
   { label: 'POLLUTION ANALYZER', desc: 'Break down pollution contribution factors', to: '/analyzer', roles: ['general_user','analyst','admin'] },
@@ -67,6 +65,10 @@ const QUICK_ACTIONS = [
 export default function Home() {
   const { profile, role } = useAuth()
   const visibleActions = QUICK_ACTIONS.filter(a => a.roles.includes(role))
+  const [cities, setCities] = useState([])
+  const [citiesStatus, setCitiesStatus] = useState('LOADING')
+  const [selectedCity, setSelectedCity] = useState(DEFAULT_CITY)
+  const [selectedCountry, setSelectedCountry] = useState(DEFAULT_COUNTRY)
   const [weatherData, setWeatherData] = useState(null)
   const [weatherStatus, setWeatherStatus] = useState('LOADING')
   const [aaqiData, setAaqiData] = useState(null)
@@ -74,11 +76,28 @@ export default function Home() {
   const [trafficData, setTrafficData] = useState(null)
   const [trafficStatus, setTrafficStatus] = useState('LOADING')
 
+  const weatherCacheKey = useMemo(
+    () => `urbanpulse:weather:${selectedCity}:${selectedCountry || ''}`,
+    [selectedCity, selectedCountry],
+  )
+  const aqiCacheKey = useMemo(
+    () => `urbanpulse:aqi:${selectedCity}:${selectedCountry || ''}`,
+    [selectedCity, selectedCountry],
+  )
+  const trafficCacheKey = useMemo(
+    () => `urbanpulse:traffic:${selectedCity}:${selectedCountry || ''}`,
+    [selectedCity, selectedCountry],
+  )
+  const selectedCityValue = useMemo(
+    () => `${selectedCity}::${selectedCountry || ''}`,
+    [selectedCity, selectedCountry],
+  )
+
   const weatherLocationLabel = useMemo(() => {
-    const city = weatherData?.location?.city || DEFAULT_CITY
-    const country = weatherData?.location?.country_code || DEFAULT_COUNTRY
+    const city = weatherData?.location?.city || selectedCity
+    const country = weatherData?.location?.country_code || selectedCountry
     return country ? `${city}, ${country}` : city
-  }, [weatherData])
+  }, [weatherData, selectedCity, selectedCountry])
 
   const aqiValue = useMemo(() => {
     return aaqiData?.aqi_index ?? null
@@ -89,12 +108,66 @@ export default function Home() {
   }, [aaqiData])
 
   useEffect(() => {
+    try {
+      const raw = localStorage.getItem(SELECTED_CITY_STORAGE_KEY)
+      if (!raw) return
+      const parsed = JSON.parse(raw)
+      if (!parsed?.city) return
+      setSelectedCity(parsed.city)
+      setSelectedCountry(parsed.country_code || '')
+    } catch {
+      // Ignore malformed saved selection.
+    }
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem(
+      SELECTED_CITY_STORAGE_KEY,
+      JSON.stringify({ city: selectedCity, country_code: selectedCountry || null }),
+    )
+  }, [selectedCity, selectedCountry])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const fetchCities = async () => {
+      try {
+        const res = await fetch(`${API}/api/weather/cities?limit=200`)
+        const json = await res.json().catch(() => null)
+        if (!res.ok || !Array.isArray(json)) {
+          if (!cancelled) setCitiesStatus('UNAVAILABLE')
+          return
+        }
+
+        if (cancelled) return
+        setCities(json)
+        setCitiesStatus('READY')
+
+        const hasSelected = json.some(
+          (item) => item.city === selectedCity && (item.country_code || '') === (selectedCountry || ''),
+        )
+        if (!hasSelected && json.length > 0) {
+          setSelectedCity(json[0].city)
+          setSelectedCountry(json[0].country_code || '')
+        }
+      } catch {
+        if (!cancelled) setCitiesStatus('UNAVAILABLE')
+      }
+    }
+
+    fetchCities()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedCity, selectedCountry])
+
+  useEffect(() => {
     let cancelled = false
     let inFlight = false
 
     const readCached = () => {
       try {
-        const raw = localStorage.getItem(WEATHER_CACHE_KEY)
+        const raw = localStorage.getItem(weatherCacheKey)
         if (!raw) return null
         const parsed = JSON.parse(raw)
         if (!parsed?.data || !parsed?.ts) return null
@@ -106,7 +179,7 @@ export default function Home() {
     }
 
     const writeCached = (data) => {
-      localStorage.setItem(WEATHER_CACHE_KEY, JSON.stringify({ ts: Date.now(), data }))
+      localStorage.setItem(weatherCacheKey, JSON.stringify({ ts: Date.now(), data }))
     }
 
     const cached = readCached()
@@ -120,10 +193,10 @@ export default function Home() {
       inFlight = true
       try {
         const params = new URLSearchParams({
-          city: DEFAULT_CITY,
+          city: selectedCity,
           units: 'metric',
         })
-        if (DEFAULT_COUNTRY) params.set('country_code', DEFAULT_COUNTRY)
+        if (selectedCountry) params.set('country_code', selectedCountry)
 
         const res = await fetch(`${API}/api/weather/current?${params.toString()}`)
         const json = await res.json().catch(() => null)
@@ -156,7 +229,7 @@ export default function Home() {
       cancelled = true
       clearInterval(timer)
     }
-  }, [])
+  }, [selectedCity, selectedCountry, weatherCacheKey])
 
   useEffect(() => {
     let cancelled = false
@@ -164,7 +237,7 @@ export default function Home() {
 
     const readTrafficCached = () => {
       try {
-        const raw = localStorage.getItem(TRAFFIC_CACHE_KEY)
+        const raw = localStorage.getItem(trafficCacheKey)
         if (!raw) return null
         const parsed = JSON.parse(raw)
         if (!parsed?.data || !parsed?.ts) return null
@@ -176,7 +249,7 @@ export default function Home() {
     }
 
     const writeTrafficCached = (data) => {
-      localStorage.setItem(TRAFFIC_CACHE_KEY, JSON.stringify({ ts: Date.now(), data }))
+      localStorage.setItem(trafficCacheKey, JSON.stringify({ ts: Date.now(), data }))
     }
 
     const cached = readTrafficCached()
@@ -190,11 +263,11 @@ export default function Home() {
       inFlight = true
       try {
         const params = new URLSearchParams({
-          city: DEFAULT_CITY,
+          city: selectedCity,
           distance_m: '500',
           bearing_deg: '90',
         })
-        if (DEFAULT_COUNTRY) params.set('country_code', DEFAULT_COUNTRY)
+        if (selectedCountry) params.set('country_code', selectedCountry)
 
         const res = await fetch(`${API}/api/traffic/score/auto?${params.toString()}`)
         const json = await res.json().catch(() => null)
@@ -227,7 +300,7 @@ export default function Home() {
       cancelled = true
       clearInterval(timer)
     }
-  }, [])
+  }, [selectedCity, selectedCountry, trafficCacheKey])
 
   useEffect(() => {
     let cancelled = false
@@ -235,7 +308,7 @@ export default function Home() {
 
     const readAaqiCached = () => {
       try {
-        const raw = localStorage.getItem(AQI_CACHE_KEY)
+        const raw = localStorage.getItem(aqiCacheKey)
         if (!raw) return null
         const parsed = JSON.parse(raw)
         if (!parsed?.data || !parsed?.ts) return null
@@ -247,7 +320,7 @@ export default function Home() {
     }
 
     const writeAaqiCached = (data) => {
-      localStorage.setItem(AQI_CACHE_KEY, JSON.stringify({ ts: Date.now(), data }))
+      localStorage.setItem(aqiCacheKey, JSON.stringify({ ts: Date.now(), data }))
     }
 
     const cached = readAaqiCached()
@@ -261,9 +334,9 @@ export default function Home() {
       inFlight = true
       try {
         const params = new URLSearchParams({
-          city: DEFAULT_CITY,
+          city: selectedCity,
         })
-        if (DEFAULT_COUNTRY) params.set('country_code', DEFAULT_COUNTRY)
+        if (selectedCountry) params.set('country_code', selectedCountry)
 
         const res = await fetch(`${API}/api/pollution/current?${params.toString()}`)
         const json = await res.json().catch(() => null)
@@ -296,7 +369,7 @@ export default function Home() {
       cancelled = true
       clearInterval(timer)
     }
-  }, [])
+  }, [selectedCity, selectedCountry, aqiCacheKey])
 
   const statCards = useMemo(() => {
     return BASE_STAT_CARDS.map((card) => {
@@ -432,6 +505,13 @@ export default function Home() {
           background: linear-gradient(135deg, rgba(59,130,246,0.18), rgba(59,130,246,0.05));
           box-shadow: 0 8px 20px rgba(0,0,0,0.22);
         }
+        .hero-controls {
+          margin-top: 16px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 20px;
+        }
         .hero-weather-label {
           font-family: 'Space Mono', monospace;
           font-size: 10px;
@@ -454,6 +534,32 @@ export default function Home() {
           border-radius: 999px;
           padding: 4px 8px;
           background: rgba(59,130,246,0.1);
+        }
+        .hero-city-picker {
+          margin-top: 16px;
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
+          padding: 10px 12px;
+          border-radius: 8px;
+          border: 1px solid rgba(148,163,184,0.25);
+          background: rgba(10,16,28,0.75);
+        }
+        .hero-city-picker-label {
+          font-family: 'Space Mono', monospace;
+          font-size: 10px;
+          letter-spacing: 0.12em;
+          color: rgba(148,163,184,0.85);
+        }
+        .hero-city-picker-select {
+          background: rgba(15,23,42,0.95);
+          color: #e2e8f0;
+          border: 1px solid rgba(59,130,246,0.35);
+          border-radius: 6px;
+          padding: 7px 10px;
+          min-width: 220px;
+          font-size: 12px;
+          outline: none;
         }
 
         /* ── Stat cards ── */
@@ -578,10 +684,39 @@ export default function Home() {
             <p className="hero-sub">
               Real-time traffic, air quality, and weather intelligence for your city.
             </p>
-            <div className="hero-weather-chip" aria-label="Current weather location">
-              <div className="hero-weather-label">ACTIVE WEATHER LOCATION</div>
-              <div className="hero-weather-value">{weatherLocationLabel}</div>
-              <div className="hero-weather-status">{weatherStatus}</div>
+            <div className="hero-controls">
+              <div className="hero-weather-chip" aria-label="Current weather location">
+                <div className="hero-weather-label">ACTIVE WEATHER LOCATION</div>
+                <div className="hero-weather-value">{weatherLocationLabel}</div>
+                <div className="hero-weather-status">{weatherStatus}</div>
+              </div>
+              <div className="hero-city-picker" aria-label="Select city from database">
+                <div className="hero-city-picker-label">CITY</div>
+                <select
+                  className="hero-city-picker-select"
+                  value={selectedCityValue}
+                  onChange={(e) => {
+                    const [city, country] = e.target.value.split('::')
+                    setSelectedCity(city)
+                    setSelectedCountry(country || '')
+                  }}
+                  disabled={citiesStatus !== 'READY' || cities.length === 0}
+                >
+                  {cities.length === 0 ? (
+                    <option value={selectedCityValue}>{`${selectedCity}, ${selectedCountry || '--'}`}</option>
+                  ) : (
+                    cities.map((item) => {
+                      const optionValue = `${item.city}::${item.country_code || ''}`
+                      const optionLabel = item.country_code ? `${item.city}, ${item.country_code}` : item.city
+                      return (
+                        <option key={`${optionValue}:${item.lat}:${item.lon}`} value={optionValue}>
+                          {optionLabel}
+                        </option>
+                      )
+                    })
+                  )}
+                </select>
+              </div>
             </div>
           </div>
 
