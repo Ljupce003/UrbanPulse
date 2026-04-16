@@ -2,6 +2,7 @@
 
 This file covers the weather and city-management work we added:
 - weather endpoint behavior and response structure
+- traffic score endpoint behavior and scoring logic
 - city CRUD endpoints
 - auth requirements for admin actions
 - caching strategy (backend + frontend) and why it exists
@@ -46,6 +47,15 @@ WEATHER_UNITS=metric
 WEATHER_CACHE_TTL_SECONDS=600
 WEATHER_GEOCODE_LIMIT=1
 WEATHER_HTTP_TIMEOUT_SECONDS=10
+LOCATIONIQ_DIRECTIONS_BASE_URL=https://eu1.locationiq.com/v1/directions/driving
+LOCATIONIQ_API_KEY=your_locationiq_key
+TRAFFIC_FREE_FLOW_KMH=50
+TRAFFIC_CACHE_TTL_SECONDS=300
+TRAFFIC_HTTP_TIMEOUT_SECONDS=10
+TRAFFIC_DEFAULT_START_LAT=41.9995
+TRAFFIC_DEFAULT_START_LON=21.4170
+TRAFFIC_DEFAULT_END_LAT=41.9948
+TRAFFIC_DEFAULT_END_LON=21.4332
 ```
 
 ### Frontend weather env (`frontend/.env`)
@@ -58,11 +68,14 @@ VITE_WEATHER_REFRESH_MS=60000
 VITE_WEATHER_CLIENT_CACHE_MS=300000
 VITE_AQI_REFRESH_MS=60000
 VITE_AQI_CLIENT_CACHE_MS=300000
+VITE_TRAFFIC_REFRESH_MS=60000
+VITE_TRAFFIC_CLIENT_CACHE_MS=300000
 ```
 
 Notes:
 - Keep `VITE_API_URL` without trailing `/`.
 - `VITE_WEATHER_CLIENT_CACHE_MS` and `VITE_AQI_CLIENT_CACHE_MS` are browser-side cache TTLs (in ms).
+- `VITE_TRAFFIC_CLIENT_CACHE_MS` is traffic browser-side cache TTL (ms).
 
 ## Supabase migration needed for city table
 
@@ -130,6 +143,92 @@ Common errors:
 - `429` provider rate limit
 - `502` upstream/provider issue
 - `503` temporary network/service issue
+
+## Traffic API
+
+Base prefix: `/api/traffic`
+
+### `GET /api/traffic/score`
+
+Calculates traffic score using LocationIQ directions route distance/duration.
+
+Input modes:
+- city mode: `city` required, `country_code` optional (resolved from `city_locations` table)
+- route mode: `start_lat`, `start_lon`, `end_lat`, `end_lon` together
+- default mode: no params -> uses default Skopje route from env
+
+Important for city mode:
+- traffic endpoints use DB-backed city resolution only
+- if city is missing in `city_locations`, API returns `404`
+- add missing cities using `POST /api/weather/cities`
+
+Examples:
+
+```bash
+curl "http://127.0.0.1:8080/api/traffic/score"
+curl "http://127.0.0.1:8080/api/traffic/score?city=Skopje&country_code=MK"
+curl "http://127.0.0.1:8080/api/traffic/score?start_lat=41.9995&start_lon=21.4170&end_lat=41.9948&end_lon=21.4332"
+```
+
+Formula used:
+- `speed_kmh = (distance_m / duration_s) * 3.6`
+- `traffic_score = clamp((speed_kmh / 50) * 10, 0, 10)`
+
+Score mapping:
+- `0.0 - 4.0`: Heavy Traffic (`red`)
+- `4.1 - 7.0`: Moderate Traffic (`yellow`)
+- `7.1 - 10.0`: Free Flow (`green`)
+
+Response shape:
+
+```json
+{
+  "source": "locationiq",
+  "location_city": "Skopje",
+  "location_country_code": "MK",
+  "route": {
+    "origin": {"lat": 41.9995, "lon": 21.417},
+    "destination": {"lat": 41.9948, "lon": 21.4332}
+  },
+  "distance_m": 2353.4,
+  "duration_s": 280.4,
+  "speed_kmh": 30.2,
+  "free_flow_kmh": 50.0,
+  "traffic_score": 6.0,
+  "traffic_level": "Moderate Traffic",
+  "traffic_color": "yellow",
+  "observed_at": 1776046191
+}
+```
+
+Common errors:
+- `400` invalid query combination
+- `404` route/location not found
+- `429` provider rate limit
+- `502` upstream/provider issue
+- `503` temporary network/service issue
+
+### `GET /api/traffic/score/auto`
+
+Generates destination coordinates automatically from a start point, then calculates score.
+
+Input modes:
+- city mode: `city` required, `country_code` optional (resolved from `city_locations` table)
+- coordinate mode: `start_lat` + `start_lon`
+- default mode: no params -> starts from default Skopje start point from env
+
+Configurable controls:
+- `distance_m` (default `500`, min `100`, max `5000`)
+- `bearing_deg` (default `90`) where `0=north`, `90=east`, `180=south`, `270=west`
+
+Examples:
+
+```bash
+curl "http://127.0.0.1:8080/api/traffic/score/auto?city=Skopje&country_code=MK"
+curl "http://127.0.0.1:8080/api/traffic/score/auto?start_lat=41.9995&start_lon=21.4170&distance_m=500&bearing_deg=90"
+```
+
+Response is same schema as `/api/traffic/score`.
 
 ## Air Quality / Pollution API
 
@@ -278,6 +377,7 @@ Two in-memory caches are used:
 - city-resolution cache (`_city_cache`)
 - weather-response cache (`_weather_cache`)
 - pollution/AQI cache (`_aqi_cache`)
+- traffic-score cache (`_traffic_cache`)
 
 TTL is controlled by `WEATHER_CACHE_TTL_SECONDS`.
 
@@ -291,6 +391,7 @@ City CRUD invalidates weather caches after create/update/delete, so dashboard do
 ### Frontend cache (`frontend/src/pages/Home.jsx`)
 
 `Home` stores latest weather and AQI responses in `localStorage` with timestamp.
+`Home` also stores latest traffic response in `localStorage`.
 
 Controls (weather):
 - refresh interval: `VITE_WEATHER_REFRESH_MS` (default 60s)
@@ -299,6 +400,10 @@ Controls (weather):
 Controls (AQI):
 - refresh interval: `VITE_AQI_REFRESH_MS` (default 60s)
 - client cache TTL: `VITE_AQI_CLIENT_CACHE_MS` (default 300000 ms = 5 min)
+
+Controls (Traffic):
+- refresh interval: `VITE_TRAFFIC_REFRESH_MS` (default 60s)
+- client cache TTL: `VITE_TRAFFIC_CLIENT_CACHE_MS` (default 300000 ms = 5 min)
 
 Why:
 - page refresh does not always trigger immediate fresh network call

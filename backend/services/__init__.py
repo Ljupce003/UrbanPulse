@@ -6,6 +6,7 @@ from .weather_service import (
 	update_city_partial,
 	delete_city,
 )
+from .traffic_service import get_traffic_score, get_traffic_score_auto_route
 
 __all__ = [
 	"get_status_payload",
@@ -14,5 +15,7 @@ __all__ = [
 	"create_city",
 	"update_city_partial",
 	"delete_city",
+	"get_traffic_score",
+	"get_traffic_score_auto_route",
 ]
 

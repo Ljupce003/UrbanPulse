@@ -53,6 +53,9 @@ const WEATHER_CACHE_KEY = `urbanpulse:weather:${DEFAULT_CITY}:${DEFAULT_COUNTRY}
 const AQI_REFRESH_MS = Number(import.meta.env.VITE_AQI_REFRESH_MS || 60000)
 const AQI_CLIENT_CACHE_MS = Number(import.meta.env.VITE_AQI_CLIENT_CACHE_MS || 300000)
 const AQI_CACHE_KEY = `urbanpulse:aqi:${DEFAULT_CITY}:${DEFAULT_COUNTRY}`
+const TRAFFIC_REFRESH_MS = Number(import.meta.env.VITE_TRAFFIC_REFRESH_MS || 60000)
+const TRAFFIC_CLIENT_CACHE_MS = Number(import.meta.env.VITE_TRAFFIC_CLIENT_CACHE_MS || 300000)
+const TRAFFIC_CACHE_KEY = `urbanpulse:traffic:${DEFAULT_CITY}:${DEFAULT_COUNTRY}`
 
 const QUICK_ACTIONS = [
   { label: 'POLLUTION ANALYZER', desc: 'Break down pollution contribution factors', to: '/analyzer', roles: ['general_user','analyst','admin'] },
@@ -68,6 +71,8 @@ export default function Home() {
   const [weatherStatus, setWeatherStatus] = useState('LOADING')
   const [aaqiData, setAaqiData] = useState(null)
   const [aaqiStatus, setAaqiStatus] = useState('LOADING')
+  const [trafficData, setTrafficData] = useState(null)
+  const [trafficStatus, setTrafficStatus] = useState('LOADING')
 
   const weatherLocationLabel = useMemo(() => {
     const city = weatherData?.location?.city || DEFAULT_CITY
@@ -147,6 +152,77 @@ export default function Home() {
 
     fetchWeather()
     const timer = setInterval(fetchWeather, WEATHER_REFRESH_MS)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    let inFlight = false
+
+    const readTrafficCached = () => {
+      try {
+        const raw = localStorage.getItem(TRAFFIC_CACHE_KEY)
+        if (!raw) return null
+        const parsed = JSON.parse(raw)
+        if (!parsed?.data || !parsed?.ts) return null
+        if (Date.now() - parsed.ts > TRAFFIC_CLIENT_CACHE_MS) return null
+        return parsed.data
+      } catch {
+        return null
+      }
+    }
+
+    const writeTrafficCached = (data) => {
+      localStorage.setItem(TRAFFIC_CACHE_KEY, JSON.stringify({ ts: Date.now(), data }))
+    }
+
+    const cached = readTrafficCached()
+    if (cached) {
+      setTrafficData(cached)
+      setTrafficStatus('CACHED')
+    }
+
+    const fetchTraffic = async () => {
+      if (inFlight) return
+      inFlight = true
+      try {
+        const params = new URLSearchParams({
+          city: DEFAULT_CITY,
+          distance_m: '500',
+          bearing_deg: '90',
+        })
+        if (DEFAULT_COUNTRY) params.set('country_code', DEFAULT_COUNTRY)
+
+        const res = await fetch(`${API}/api/traffic/score/auto?${params.toString()}`)
+        const json = await res.json().catch(() => null)
+        if (!res.ok) {
+          if (!cancelled) {
+            setTrafficStatus(cached ? 'CACHED' : 'UNAVAILABLE')
+            console.warn('[Home] traffic fetch failed:', json?.detail || `Error ${res.status}`)
+          }
+          return
+        }
+
+        if (!cancelled) {
+          setTrafficData(json)
+          setTrafficStatus('LIVE')
+          writeTrafficCached(json)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setTrafficStatus(cached ? 'CACHED' : 'UNAVAILABLE')
+          console.warn('[Home] traffic fetch failed:', err.message)
+        }
+      } finally {
+        inFlight = false
+      }
+    }
+
+    fetchTraffic()
+    const timer = setInterval(fetchTraffic, TRAFFIC_REFRESH_MS)
     return () => {
       cancelled = true
       clearInterval(timer)
@@ -260,9 +336,34 @@ export default function Home() {
         }
       }
 
+      if (card.id === 'traffic') {
+        if (!trafficData) {
+          return {
+            ...card,
+            status: trafficStatus,
+            statusColor: trafficStatus === 'UNAVAILABLE' ? '#ef4444' : '#3b82f6',
+          }
+        }
+
+        const colorMap = {
+          red: '#ef4444',
+          yellow: '#f59e0b',
+          green: '#10b981',
+        }
+        const trafficColor = colorMap[trafficData.traffic_color] || '#3b82f6'
+
+        return {
+          ...card,
+          value: Number(trafficData.traffic_score ?? 0).toFixed(1),
+          unit: '/10',
+          status: `${trafficData.traffic_level || 'TRAFFIC'} | ${trafficStatus}`,
+          statusColor: trafficStatus === 'UNAVAILABLE' ? '#ef4444' : trafficColor,
+        }
+      }
+
       return card
     })
-  }, [weatherData, weatherStatus, weatherLocationLabel, aaqiData, aaqiStatus, aqiValue, aqiLevel])
+  }, [weatherData, weatherStatus, weatherLocationLabel, aaqiData, aaqiStatus, aqiValue, aqiLevel, trafficData, trafficStatus])
 
   return (
     <div>

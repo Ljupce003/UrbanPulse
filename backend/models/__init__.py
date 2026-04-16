@@ -7,6 +7,7 @@ from .weather import (
 	CityRecord,
 	CityDeleteResponse,
 )
+from .traffic import TrafficScoreResponse
 
 __all__ = [
 	"ServiceStatus",
@@ -16,5 +17,6 @@ __all__ = [
 	"CityPatchRequest",
 	"CityRecord",
 	"CityDeleteResponse",
+	"TrafficScoreResponse",
 ]
 
