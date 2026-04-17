@@ -1,24 +1,14 @@
-import json
 import logging
-import time
 from typing import Optional
 from urllib.parse import urlencode
-from urllib.request import urlopen, Request
-from urllib.error import HTTPError, URLError
-
 from fastapi import HTTPException
 
 from backend.core.config import get_settings, get_supabase_admin
 from backend.models.weather import (
     CityLocation,
-    WeatherCurrentResponse,
-    WeatherCondition,
-    WeatherMain,
-    WeatherWind,
-    CityRecord,
-    CityUpsertRequest,
-    CityPatchRequest,
+    WeatherCurrentResponse, CityRecord, CityUpsertRequest, CityPatchRequest, WeatherCondition, WeatherMain, WeatherWind,
 )
+from backend.services.common.helpers import _execute_data, _cache_get, _http_get_json, _cache_set, _normalize_city
 
 
 log = logging.getLogger("urbanpulse.weather")
@@ -26,48 +16,24 @@ _city_cache: dict[str, tuple[float, CityLocation]] = {}
 _weather_cache: dict[str, tuple[float, dict]] = {}
 
 
-def _cache_get(cache: dict, key: str, ttl_seconds: int):
-    entry = cache.get(key)
-    if not entry:
+def _resolve_city_from_db(city: str, country_code: Optional[str]) -> Optional[CityLocation]:
+    supabase = get_supabase_admin()
+    normalized = _normalize_city(city)
+
+    query = (
+        supabase.table("city_locations")
+        .select("name, country_code, state, lat, lon")
+        .eq("name_normalized", normalized)
+    )
+    if country_code:
+        query = query.eq("country_code", country_code.upper())
+
+    result = query.order("population_rank", desc=False).limit(1).execute()
+    row = result.data[0] if result.data else None
+    if not row:
         return None
-    created_at, value = entry
-    if time.time() - created_at > ttl_seconds:
-        cache.pop(key, None)
-        return None
-    return value
 
-
-def _cache_set(cache: dict, key: str, value):
-    cache[key] = (time.time(), value)
-
-
-def _execute_data(query):
-    response = query.execute()
-    return getattr(response, "data", None) if response is not None else None
-
-
-def _http_get_json(url: str, timeout_seconds: int) -> dict:
-    req = Request(url=url, headers={"Accept": "application/json"}, method="GET")
-    try:
-        with urlopen(req, timeout=timeout_seconds) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="ignore")
-        if exc.code == 401:
-            raise HTTPException(status_code=502, detail="Weather provider rejected the API key")
-        if exc.code == 404:
-            raise HTTPException(status_code=404, detail="Requested location not found")
-        if exc.code == 429:
-            raise HTTPException(status_code=429, detail="Weather provider rate limit reached")
-        log.warning("Weather HTTP error %s: %s", exc.code, detail)
-        raise HTTPException(status_code=502, detail="Failed to fetch weather data")
-    except URLError as exc:
-        log.warning("Weather network error: %s", exc)
-        raise HTTPException(status_code=503, detail="Weather service temporarily unavailable")
-
-
-def _normalize_city(name: str) -> str:
-    return " ".join(name.strip().lower().split())
+    return _city_row_to_location(row)
 
 
 def _clear_weather_caches():
@@ -113,27 +79,6 @@ def _get_city_row_by_id(city_id: int) -> dict:
     if not row:
         raise HTTPException(status_code=404, detail="City not found")
     return row
-
-
-def _resolve_city_from_db(city: str, country_code: Optional[str]) -> Optional[CityLocation]:
-    supabase = get_supabase_admin()
-    normalized = _normalize_city(city)
-
-    query = (
-        supabase.table("city_locations")
-        .select("name, country_code, state, lat, lon")
-        .eq("name_normalized", normalized)
-    )
-    if country_code:
-        query = query.eq("country_code", country_code.upper())
-
-    result = query.order("population_rank", desc=False).limit(1).execute()
-    row = result.data[0] if result.data else None
-    if not row:
-        return None
-
-    return _city_row_to_location(row)
-
 
 def _upsert_city_to_db(city: CityLocation):
     supabase = get_supabase_admin()
@@ -225,73 +170,6 @@ def _resolve_city_from_coordinates(lat: float, lon: float) -> CityLocation:
     )
 
 
-def get_current_weather(
-    city: Optional[str] = None,
-    country_code: Optional[str] = None,
-    lat: Optional[float] = None,
-    lon: Optional[float] = None,
-    units: Optional[str] = None,
-) -> WeatherCurrentResponse:
-    settings = get_settings()
-    if not settings.WEATHER_API_KEY:
-        raise HTTPException(status_code=500, detail="Missing WEATHER_API_KEY configuration")
-
-    if city:
-        city_data = resolve_city(city=city, country_code=country_code)
-        lat = city_data.lat
-        lon = city_data.lon
-    elif lat is not None and lon is not None:
-        city_data = _resolve_city_from_coordinates(lat, lon)
-    else:
-        raise HTTPException(status_code=400, detail="Provide either city or both lat and lon")
-
-    effective_units = units or settings.WEATHER_UNITS
-    weather_cache_key = f"weather:{lat}:{lon}:{effective_units}"
-    cached = _cache_get(_weather_cache, weather_cache_key, settings.WEATHER_CACHE_TTL_SECONDS)
-    if cached:
-        return WeatherCurrentResponse(**cached)
-
-    params = {
-        "lat": lat,
-        "lon": lon,
-        "units": effective_units,
-        "appid": settings.WEATHER_API_KEY,
-    }
-    url = f"{settings.WEATHER_BASE_URL}/data/2.5/weather?{urlencode(params)}"
-    payload = _http_get_json(url, settings.WEATHER_HTTP_TIMEOUT_SECONDS)
-
-    weather_info = (payload.get("weather") or [{}])[0]
-    main_info = payload.get("main") or {}
-    wind_info = payload.get("wind") or {}
-
-    response = WeatherCurrentResponse(
-        location=city_data,
-        weather=WeatherCondition(
-            main=weather_info.get("main", "unknown"),
-            description=weather_info.get("description", "unknown"),
-            icon=weather_info.get("icon", "01d"),
-        ),
-        main=WeatherMain(
-            temp=float(main_info.get("temp", 0.0)),
-            feels_like=float(main_info.get("feels_like", 0.0)),
-            temp_min=float(main_info.get("temp_min", 0.0)),
-            temp_max=float(main_info.get("temp_max", 0.0)),
-            pressure=int(main_info.get("pressure", 0)),
-            humidity=int(main_info.get("humidity", 0)),
-        ),
-        wind=WeatherWind(
-            speed=float(wind_info.get("speed", 0.0)),
-            deg=wind_info.get("deg"),
-        ),
-        visibility=payload.get("visibility"),
-        observed_at=int(payload.get("dt", 0)),
-        timezone_offset=int(payload.get("timezone", 0)),
-    )
-
-    _cache_set(_weather_cache, weather_cache_key, response.model_dump())
-    return response
-
-
 def list_cached_cities(country_code: Optional[str] = None, limit: int = 30) -> list[CityLocation]:
     supabase = get_supabase_admin()
     query = supabase.table("city_locations").select("name, country_code, state, lat, lon")
@@ -334,7 +212,6 @@ def create_city(payload: CityUpsertRequest) -> CityRecord:
     )
     created = getattr(insert_response, "data", None) if insert_response is not None else None
 
-    # Some supabase/postgrest versions can return no representation for writes.
     if not created:
         created = _execute_data(
             supabase.table("city_locations")
@@ -406,6 +283,113 @@ def update_city_partial(city_id: int, payload: CityPatchRequest) -> CityRecord:
     _clear_weather_caches()
     return _city_row_to_record(updated[0])
 
+def preprocess_weather_data(
+    payload: dict,
+    city_data: CityLocation,
+    effective_units: str,
+) -> WeatherCurrentResponse:
+    """
+    Preprocessing pipeline for weather data.
+    Handles missing values, nulls, type conversions, and validation.
+    """
+    if not payload:
+        raise HTTPException(status_code=502, detail="Invalid weather data received from provider")
+
+    weather_info = (payload.get("weather") or [{}])[0]
+    main_info = payload.get("main") or {}
+    wind_info = payload.get("wind") or {}
+
+    def safe_float(value: any, default: float = 0.0) -> float:
+        if value is None:
+            return default
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return default
+
+    def safe_int(value: any, default: int = 0) -> int:
+        if value is None:
+            return default
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return default
+
+    response = WeatherCurrentResponse(
+        location=city_data,
+        weather=WeatherCondition(
+            main=weather_info.get("main", "unknown"),
+            description=weather_info.get("description", "unknown"),
+            icon=weather_info.get("icon", "01d"),
+        ),
+        main=WeatherMain(
+            temp=safe_float(main_info.get("temp")),
+            feels_like=safe_float(main_info.get("feels_like")),
+            temp_min=safe_float(main_info.get("temp_min")),
+            temp_max=safe_float(main_info.get("temp_max")),
+            pressure=safe_int(main_info.get("pressure")),
+            humidity=safe_int(main_info.get("humidity")),
+        ),
+        wind=WeatherWind(
+            speed=safe_float(wind_info.get("speed")),
+            deg=wind_info.get("deg"),
+        ),
+        visibility=payload.get("visibility"),
+        observed_at=safe_int(payload.get("dt")),
+        timezone_offset=safe_int(payload.get("timezone")),
+    )
+
+    return response
+
+def get_current_weather(
+    city: Optional[str] = None,
+    country_code: Optional[str] = None,
+    lat: Optional[float] = None,
+    lon: Optional[float] = None,
+    units: Optional[str] = None,
+) -> WeatherCurrentResponse:
+    """
+    Fetch current weather from OpenWeatherMap with full preprocessing pipeline.
+    Supports city mode or coordinate mode.
+    """
+    settings = get_settings()
+    if not settings.WEATHER_API_KEY:
+        raise HTTPException(status_code=500, detail="Missing WEATHER_API_KEY configuration")
+
+    if city:
+        city_data = resolve_city(city=city, country_code=country_code)
+        lat = city_data.lat
+        lon = city_data.lon
+    elif lat is not None and lon is not None:
+        city_data = _resolve_city_from_coordinates(lat, lon)
+    else:
+        raise HTTPException(status_code=400, detail="Provide either city or both lat and lon")
+
+    effective_units = units or settings.WEATHER_UNITS
+    weather_cache_key = f"weather:{lat}:{lon}:{effective_units}"
+    cached = _cache_get(_weather_cache, weather_cache_key, settings.WEATHER_CACHE_TTL_SECONDS)
+    if cached:
+        return WeatherCurrentResponse(**cached)
+
+    params = {
+        "lat": lat,
+        "lon": lon,
+        "units": effective_units,
+        "appid": settings.WEATHER_API_KEY,
+    }
+    url = f"{settings.WEATHER_BASE_URL}/data/2.5/weather?{urlencode(params)}"
+    payload = _http_get_json(url, settings.WEATHER_HTTP_TIMEOUT_SECONDS)
+
+    response = preprocess_weather_data(
+        payload=payload,
+        city_data=city_data,
+        effective_units=effective_units,
+    )
+
+    _cache_set(_weather_cache, weather_cache_key, response.model_dump())
+    return response
+
+
 
 def delete_city(city_id: int) -> dict:
     _get_city_row_by_id(city_id)
@@ -416,7 +400,6 @@ def delete_city(city_id: int) -> dict:
         .eq("id", city_id)
     )
     if not deleted:
-        # Some responses omit deleted rows even when deletion succeeded.
         if _execute_data(
             supabase.table("city_locations")
             .select("id")
@@ -427,4 +410,3 @@ def delete_city(city_id: int) -> dict:
 
     _clear_weather_caches()
     return {"message": "City deleted", "city_id": city_id}
-
