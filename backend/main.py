@@ -10,6 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from backend.routers.auth import router as auth_router, log
 from backend.routers import status_router, weather_router, pollution_router, traffic_router
+from backend.routers.historical_router import router as historical_router
 from backend.routers.recommendation import router as recommendations_router
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -52,7 +53,10 @@ app.include_router(status_router, prefix="/api")
 app.include_router(weather_router, prefix="/api")
 app.include_router(pollution_router, prefix="/api")
 app.include_router(traffic_router, prefix="/api")
+
 app.include_router(recommendations_router, prefix="/api")
+
+app.include_router(historical_router, prefix="/api")
 
 @app.get("/")
 def root():

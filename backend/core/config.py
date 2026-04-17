@@ -35,6 +35,9 @@ class Settings:
     TRAFFIC_CITY_ROUTE_DEST_DELTA_LON: float = float(os.getenv("TRAFFIC_CITY_ROUTE_DEST_DELTA_LON", "0.0078"))
     app_name: str = os.getenv("APP_NAME", "UrbanPulse API")
     api_prefix: str = os.getenv("API_PREFIX", "/api")
+    HISTORY_DAYS: int = int(os.getenv("HISTORY_DAYS", "31"))
+    HISTORY_CACHE_TTL_SECONDS: int = int(os.getenv("HISTORY_CACHE_TTL_SECONDS", "3600"))
+
 
 
 @lru_cache()
