@@ -6,13 +6,40 @@ from urllib.parse import urlencode
 
 from fastapi import HTTPException
 
-from backend.core.config import get_settings
-from backend.models.traffic import RoutePoint, TrafficScoreResponse, TrafficRoute
-from backend.services.common.helpers import _cache_get, \
-    _http_get_json, _cache_set, _resolve_city_from_db_only
+from backend.core.config import get_settings, get_supabase_admin
+from backend.models.traffic import RoutePoint, TrafficRoute, TrafficScoreResponse
+from .common.helpers import _cache_get, _cache_set, _http_get_json
 
 log = logging.getLogger("urbanpulse.traffic")
 _traffic_cache: dict[str, tuple[float, dict]] = {}
+
+
+def _normalize_city(name: str) -> str:
+    return " ".join(name.strip().lower().split())
+
+
+def _resolve_city_from_db_only(city: str, country_code: Optional[str]) -> tuple[RoutePoint, str, Optional[str]]:
+    supabase = get_supabase_admin()
+    query = (
+        supabase.table("city_locations")
+        .select("name, country_code, lat, lon")
+        .eq("name_normalized", _normalize_city(city))
+    )
+    if country_code:
+        query = query.eq("country_code", country_code.upper())
+
+    result = query.order("population_rank", desc=False).limit(1).execute()
+    rows = getattr(result, "data", None) or []
+    if not rows:
+        raise HTTPException(
+            status_code=404,
+            detail="City not found in city_locations. Add it via /api/weather/cities first.",
+        )
+
+    first = rows[0]
+    point = RoutePoint(lat=float(first["lat"]), lon=float(first["lon"]))
+    return point, first["name"], first.get("country_code")
+
 
 def _derive_level(score: float) -> tuple[str, str]:
     if score <= 4.0:
@@ -94,6 +121,7 @@ def _offset_point_by_distance(lat: float, lon: float, distance_m: float, bearing
     lat2_deg = math.degrees(lat2)
     return RoutePoint(lat=lat2_deg, lon=lon2_deg)
 
+
 def preprocess_traffic_data(
     payload: dict,
     origin: RoutePoint,
@@ -107,19 +135,14 @@ def preprocess_traffic_data(
     Handles missing values, nulls, type conversions, and validation.
     """
     if not payload or "routes" not in payload or not payload["routes"]:
+        log.error("Invalid or empty traffic payload received")
         raise HTTPException(status_code=502, detail="Invalid traffic data received from provider")
 
     route = payload["routes"][0]
 
-    raw_distance = route.get("distance")
-    raw_duration = route.get("duration")
-
-    if raw_distance is None or raw_duration is None:
-        raise HTTPException(status_code=502, detail="Traffic provider returned incomplete route data")
-
     try:
-        distance_m = float(raw_distance)
-        duration_s = float(raw_duration)
+        distance_m = float(route.get("distance", 0))
+        duration_s = float(route.get("duration", 0))
     except (ValueError, TypeError):
         raise HTTPException(status_code=502, detail="Traffic provider returned invalid numeric data")
 
@@ -155,8 +178,7 @@ def get_traffic_score(
     end_lon: Optional[float] = None,
 ) -> TrafficScoreResponse:
     """
-    Fetch traffic score from LocationIQ Directions API with full preprocessing.
-    Supports city mode or explicit coordinate route.
+    Fetch traffic score from LocationIQ with preprocessing.
     """
     settings = get_settings()
     if not settings.LOCATIONIQ_API_KEY:
@@ -175,10 +197,7 @@ def get_traffic_score(
             location_city = "Skopje"
             location_country_code = "MK"
 
-    route_key = (
-        f"traffic:{origin.lon:.5f},{origin.lat:.5f};"
-        f"{destination.lon:.5f},{destination.lat:.5f}"
-    )
+    route_key = f"traffic:{origin.lon:.5f},{origin.lat:.5f};{destination.lon:.5f},{destination.lat:.5f}"
     cached = _cache_get(_traffic_cache, route_key, settings.TRAFFIC_CACHE_TTL_SECONDS)
     if cached:
         return TrafficScoreResponse(**cached)
@@ -212,7 +231,7 @@ def get_traffic_score_auto_route(
     bearing_deg: float = 90.0,
 ) -> TrafficScoreResponse:
     """
-    Generate automatic route and fetch traffic score using preprocessing pipeline.
+    Generate automatic route and fetch traffic score.
     """
     if city and (start_lat is not None or start_lon is not None):
         raise HTTPException(status_code=400, detail="Use city or start_lat/start_lon, not both")
@@ -253,4 +272,3 @@ def get_traffic_score_auto_route(
     response.location_city = city_name
     response.location_country_code = city_country
     return response
-

@@ -1,39 +1,30 @@
 import logging
 from typing import Optional
 from urllib.parse import urlencode
+
 from fastapi import HTTPException
 
 from backend.core.config import get_settings, get_supabase_admin
 from backend.models.weather import (
     CityLocation,
-    WeatherCurrentResponse, CityRecord, CityUpsertRequest, CityPatchRequest, WeatherCondition, WeatherMain, WeatherWind,
+    WeatherCurrentResponse,
+    WeatherCondition,
+    WeatherMain,
+    WeatherWind,
+    CityRecord,
+    CityUpsertRequest,
+    CityPatchRequest,
 )
-from backend.services.common.helpers import _execute_data, _cache_get, _http_get_json, _cache_set, _normalize_city
-
+from backend.services.common.helpers import _http_get_json, _cache_get, _cache_set
 
 log = logging.getLogger("urbanpulse.weather")
+
 _city_cache: dict[str, tuple[float, CityLocation]] = {}
 _weather_cache: dict[str, tuple[float, dict]] = {}
 
 
-def _resolve_city_from_db(city: str, country_code: Optional[str]) -> Optional[CityLocation]:
-    supabase = get_supabase_admin()
-    normalized = _normalize_city(city)
-
-    query = (
-        supabase.table("city_locations")
-        .select("name, country_code, state, lat, lon")
-        .eq("name_normalized", normalized)
-    )
-    if country_code:
-        query = query.eq("country_code", country_code.upper())
-
-    result = query.order("population_rank", desc=False).limit(1).execute()
-    row = result.data[0] if result.data else None
-    if not row:
-        return None
-
-    return _city_row_to_location(row)
+def _normalize_city(name: str) -> str:
+    return " ".join(name.strip().lower().split())
 
 
 def _clear_weather_caches():
@@ -64,6 +55,11 @@ def _city_row_to_record(row: dict) -> CityRecord:
     )
 
 
+def _execute_data(query):
+    response = query.execute()
+    return getattr(response, "data", None) if response is not None else None
+
+
 def _get_city_row_by_id(city_id: int) -> dict:
     supabase = get_supabase_admin()
     row = _execute_data(
@@ -79,6 +75,27 @@ def _get_city_row_by_id(city_id: int) -> dict:
     if not row:
         raise HTTPException(status_code=404, detail="City not found")
     return row
+
+
+def _resolve_city_from_db(city: str, country_code: Optional[str]) -> Optional[CityLocation]:
+    supabase = get_supabase_admin()
+    normalized = _normalize_city(city)
+
+    query = (
+        supabase.table("city_locations")
+        .select("name, country_code, state, lat, lon")
+        .eq("name_normalized", normalized)
+    )
+    if country_code:
+        query = query.eq("country_code", country_code.upper())
+
+    result = query.order("population_rank", desc=False).limit(1).execute()
+    row = result.data[0] if result.data else None
+    if not row:
+        return None
+
+    return _city_row_to_location(row)
+
 
 def _upsert_city_to_db(city: CityLocation):
     supabase = get_supabase_admin()
@@ -170,119 +187,6 @@ def _resolve_city_from_coordinates(lat: float, lon: float) -> CityLocation:
     )
 
 
-def list_cached_cities(country_code: Optional[str] = None, limit: int = 30) -> list[CityLocation]:
-    supabase = get_supabase_admin()
-    query = supabase.table("city_locations").select("name, country_code, state, lat, lon")
-    if country_code:
-        query = query.eq("country_code", country_code.upper())
-
-    rows = _execute_data(query.order("population_rank", desc=False).limit(limit)) or []
-    return [_city_row_to_location(row) for row in rows]
-
-
-def create_city(payload: CityUpsertRequest) -> CityRecord:
-    supabase = get_supabase_admin()
-    normalized_name = _normalize_city(payload.city)
-    normalized_country = payload.country_code.upper() if payload.country_code else None
-
-    existing_rows = _execute_data(
-        supabase.table("city_locations")
-        .select("id")
-        .eq("name_normalized", normalized_name)
-        .eq("country_code", normalized_country)
-        .limit(1)
-    ) or []
-    if existing_rows:
-        raise HTTPException(status_code=409, detail="City already exists for this country")
-
-    insert_payload = {
-        "name": payload.city,
-        "name_normalized": normalized_name,
-        "country_code": normalized_country,
-        "state": payload.state,
-        "lat": payload.lat,
-        "lon": payload.lon,
-        "population_rank": payload.population_rank,
-        "source": "manual",
-    }
-    insert_response = (
-        supabase.table("city_locations")
-        .insert(insert_payload)
-        .execute()
-    )
-    created = getattr(insert_response, "data", None) if insert_response is not None else None
-
-    if not created:
-        created = _execute_data(
-            supabase.table("city_locations")
-            .select("id, name, country_code, state, lat, lon, population_rank, source")
-            .eq("name_normalized", normalized_name)
-            .eq("country_code", normalized_country)
-            .order("id", desc=True)
-            .limit(1)
-        )
-
-    if not created:
-        log.error("City insert returned no data and fallback lookup failed: city=%s country=%s", payload.city, normalized_country)
-        raise HTTPException(status_code=500, detail="Failed to create city")
-
-    if isinstance(created, dict):
-        created = [created]
-
-    _clear_weather_caches()
-    return _city_row_to_record(created[0])
-
-
-def update_city_partial(city_id: int, payload: CityPatchRequest) -> CityRecord:
-    updates = payload.model_dump(exclude_unset=True)
-    if not updates:
-        raise HTTPException(status_code=400, detail="At least one field must be provided")
-
-    current = _get_city_row_by_id(city_id)
-
-    if "city" in updates:
-        updates["name"] = updates.pop("city")
-        updates["name_normalized"] = _normalize_city(updates["name"])
-
-    if "country_code" in updates and updates["country_code"] is not None:
-        updates["country_code"] = updates["country_code"].upper()
-
-    supabase = get_supabase_admin()
-    final_name_normalized = updates.get("name_normalized", _normalize_city(current["name"]))
-    final_country = updates.get("country_code", current.get("country_code"))
-
-    conflict_rows = _execute_data(
-        supabase.table("city_locations")
-        .select("id")
-        .eq("name_normalized", final_name_normalized)
-        .eq("country_code", final_country)
-        .neq("id", city_id)
-        .limit(1)
-    ) or []
-    if conflict_rows:
-        raise HTTPException(status_code=409, detail="Another city already uses this name/country")
-
-    updated = _execute_data(
-        supabase.table("city_locations")
-        .update(updates)
-        .eq("id", city_id)
-    )
-    if not updated:
-        updated = _execute_data(
-            supabase.table("city_locations")
-            .select("id, name, country_code, state, lat, lon, population_rank, source")
-            .eq("id", city_id)
-            .limit(1)
-        )
-    if not updated:
-        raise HTTPException(status_code=500, detail="Failed to update city")
-
-    if isinstance(updated, dict):
-        updated = [updated]
-
-    _clear_weather_caches()
-    return _city_row_to_record(updated[0])
-
 def preprocess_weather_data(
     payload: dict,
     city_data: CityLocation,
@@ -293,6 +197,7 @@ def preprocess_weather_data(
     Handles missing values, nulls, type conversions, and validation.
     """
     if not payload:
+        log.error("Invalid or empty weather payload received")
         raise HTTPException(status_code=502, detail="Invalid weather data received from provider")
 
     weather_info = (payload.get("weather") or [{}])[0]
@@ -305,6 +210,7 @@ def preprocess_weather_data(
         try:
             return float(value)
         except (ValueError, TypeError):
+            log.warning(f"Invalid float value: {value}")
             return default
 
     def safe_int(value: any, default: int = 0) -> int:
@@ -313,6 +219,7 @@ def preprocess_weather_data(
         try:
             return int(value)
         except (ValueError, TypeError):
+            log.warning(f"Invalid int value: {value}")
             return default
 
     response = WeatherCurrentResponse(
@@ -341,6 +248,7 @@ def preprocess_weather_data(
 
     return response
 
+
 def get_current_weather(
     city: Optional[str] = None,
     country_code: Optional[str] = None,
@@ -350,7 +258,6 @@ def get_current_weather(
 ) -> WeatherCurrentResponse:
     """
     Fetch current weather from OpenWeatherMap with full preprocessing pipeline.
-    Supports city mode or coordinate mode.
     """
     settings = get_settings()
     if not settings.WEATHER_API_KEY:
@@ -390,21 +297,122 @@ def get_current_weather(
     return response
 
 
+def list_cached_cities(country_code: Optional[str] = None, limit: int = 30) -> list[CityLocation]:
+    supabase = get_supabase_admin()
+    query = supabase.table("city_locations").select("name, country_code, state, lat, lon")
+    if country_code:
+        query = query.eq("country_code", country_code.upper())
+
+    rows = _execute_data(query.order("population_rank", desc=False).limit(limit)) or []
+    return [_city_row_to_location(row) for row in rows]
+
+
+def create_city(payload: CityUpsertRequest) -> CityRecord:
+    supabase = get_supabase_admin()
+    normalized_name = _normalize_city(payload.city)
+    normalized_country = payload.country_code.upper() if payload.country_code else None
+
+    existing_rows = _execute_data(
+        supabase.table("city_locations")
+        .select("id")
+        .eq("name_normalized", normalized_name)
+        .eq("country_code", normalized_country)
+        .limit(1)
+    ) or []
+    if existing_rows:
+        raise HTTPException(status_code=409, detail="City already exists for this country")
+
+    insert_payload = {
+        "name": payload.city,
+        "name_normalized": normalized_name,
+        "country_code": normalized_country,
+        "state": payload.state,
+        "lat": payload.lat,
+        "lon": payload.lon,
+        "population_rank": payload.population_rank,
+        "source": "manual",
+    }
+    insert_response = supabase.table("city_locations").insert(insert_payload).execute()
+    created = getattr(insert_response, "data", None) if insert_response is not None else None
+
+    if not created:
+        created = _execute_data(
+            supabase.table("city_locations")
+            .select("id, name, country_code, state, lat, lon, population_rank, source")
+            .eq("name_normalized", normalized_name)
+            .eq("country_code", normalized_country)
+            .order("id", desc=True)
+            .limit(1)
+        )
+
+    if not created:
+        raise HTTPException(status_code=500, detail="Failed to create city")
+
+    if isinstance(created, dict):
+        created = [created]
+
+    _clear_weather_caches()
+    return _city_row_to_record(created[0])
+
+
+def update_city_partial(city_id: int, payload: CityPatchRequest) -> CityRecord:
+    updates = payload.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="At least one field must be provided")
+
+    current = _get_city_row_by_id(city_id)
+
+    if "city" in updates:
+        updates["name"] = updates.pop("city")
+        updates["name_normalized"] = _normalize_city(updates["name"])
+
+    if "country_code" in updates and updates["country_code"] is not None:
+        updates["country_code"] = updates["country_code"].upper()
+
+    supabase = get_supabase_admin()
+    final_name_normalized = updates.get("name_normalized", _normalize_city(current["name"]))
+    final_country = updates.get("country_code", current.get("country_code"))
+
+    conflict_rows = _execute_data(
+        supabase.table("city_locations")
+        .select("id")
+        .eq("name_normalized", final_name_normalized)
+        .eq("country_code", final_country)
+        .neq("id", city_id)
+        .limit(1)
+    ) or []
+    if conflict_rows:
+        raise HTTPException(status_code=409, detail="Another city already uses this name/country")
+
+    updated = _execute_data(
+        supabase.table("city_locations").update(updates).eq("id", city_id)
+    )
+    if not updated:
+        updated = _execute_data(
+            supabase.table("city_locations")
+            .select("id, name, country_code, state, lat, lon, population_rank, source")
+            .eq("id", city_id)
+            .limit(1)
+        )
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to update city")
+
+    if isinstance(updated, dict):
+        updated = [updated]
+
+    _clear_weather_caches()
+    return _city_row_to_record(updated[0])
+
 
 def delete_city(city_id: int) -> dict:
     _get_city_row_by_id(city_id)
     supabase = get_supabase_admin()
     deleted = _execute_data(
-        supabase.table("city_locations")
-        .delete()
-        .eq("id", city_id)
+        supabase.table("city_locations").delete().eq("id", city_id)
     )
     if not deleted:
         if _execute_data(
-            supabase.table("city_locations")
-            .select("id")
-            .eq("id", city_id)
-            .limit(1)
+            supabase.table("city_locations").select("id").eq("id", city_id).limit(1)
         ):
             raise HTTPException(status_code=500, detail="Failed to delete city")
 
