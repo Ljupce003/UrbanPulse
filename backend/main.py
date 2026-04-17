@@ -1,4 +1,5 @@
 import sys
+
 import os
 import logging
 import hypercorn.asyncio
@@ -8,8 +9,8 @@ from hypercorn.config import Config
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from backend.routers.auth import router as auth_router, log
-from backend.core import settings
 from backend.routers import status_router, weather_router, pollution_router, traffic_router
+from backend.routers.recommendation import router as recommendations_router
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
@@ -51,7 +52,7 @@ app.include_router(status_router, prefix="/api")
 app.include_router(weather_router, prefix="/api")
 app.include_router(pollution_router, prefix="/api")
 app.include_router(traffic_router, prefix="/api")
-
+app.include_router(recommendations_router, prefix="/api")
 
 @app.get("/")
 def root():

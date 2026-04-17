@@ -6,3 +6,6 @@ pydantic[email]
 hypercorn
 PyJWT
 uvicorn
+azure-ai-inference
+azure-core
+openai
