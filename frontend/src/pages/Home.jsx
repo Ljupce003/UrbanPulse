@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
+import ShapeGrid from "../components/ShapeGrid.jsx";
 
 const ROLE_LABEL = {
   admin:        'Administrator',
@@ -445,7 +446,6 @@ export default function Home() {
         body {
           margin: 0;
           overflow-x: hidden !important;
-
         }
         .home-page {
           min-height: 100vh; background: #080c14;
