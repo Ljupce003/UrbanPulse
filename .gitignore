@@ -61,3 +61,17 @@ Thumbs.db
 
 
 node_modules/
+
+out/
+
+# ----------------------
+# Data / Notebooks
+# ----------------------
+data/processed/
+*.jsonl
+
+**/.ipynb_checkpoints/
+
+# Optional local-only datasets (uncomment if you do not want to version them)
+data/raw/
+data/interim/
