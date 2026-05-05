@@ -33,6 +33,15 @@ import xgboost as xgb
 
 logger = logging.getLogger(__name__)
 
+EXCLUDE_FROM_CONTRIBUTIONS = {
+    "aqi_lag_1h", "aqi_lag_2h", "aqi_lag_3h", "aqi_lag_6h", "aqi_lag_12h", "aqi_lag_24h",
+    "aqi_roll6h_mean", "aqi_roll24h_mean", "aqi_roll24h_std",
+    "pm25_lag1h", "pm1_lag1h", "o3_lag1h", "no2_lag1h",
+    "hour_sin", "hour_cos", "month_sin", "month_cos",
+    "traffic_temp_interact",
+    "temp_min_c", "temp_max_c",
+} # IMPORTANT!!
+
 MODEL_DIR = Path(__file__).resolve().parent.parent / "ml" / "pollution cause analyzer" / "models"
 
 _model: xgb.Booster | None = None
@@ -150,6 +159,8 @@ def analyze(feature_dict: dict[str, Any]) -> dict:
 
     contributions = []
     for feat, sv in zip(get_features(), shap_row):
+        if feat in EXCLUDE_FROM_CONTRIBUTIONS:
+            continue
         pct = abs(float(sv)) / total_abs * 100 if total_abs > 0 else 0.0
         direction = (
             "increase" if sv > 0.5 else

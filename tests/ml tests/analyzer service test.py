@@ -7,8 +7,9 @@ from backend.services.analyzer_service import load_analyzer, health_check, analy
 def test_analyzer():
     print("🚀 Testing Pollution Analyzer Service...\n")
 
+    # 1. Load the model (do this once)
     load_analyzer()
-    print("Model loaded successfully!\n")
+    print("✅ Model loaded successfully!\n")
 
     sample_input = {
         "traffic_intensity": 0.78,
@@ -16,9 +17,11 @@ def test_analyzer():
         "temp_avg_c": 5.2,
         "wind_speed_kmh": 8.5,
         "pressure_hpa": 1015.0,
-        "aqi_lag_1h": 65.0,
-        "aqi_lag_3h": 62.0,
-        "traffic_temp_interact": 0.12
+        "hour_sin": 0.0,
+        "hour_cos": 1.0,
+        "month_sin": 0.5,
+        "month_cos": 0.866,
+        "traffic_temp_interact": 0.12, # we can add other factors here - check dataset columns from imputed_features.csv
     }
 
     print("📊 Health Check:")
@@ -33,10 +36,11 @@ def test_analyzer():
     result = analyze(sample_input)
 
     print(f"Predicted AQI : {result['predicted_aqi']}")
-    print(f"Category: {result['aqi_category']['category']}")
+    print(f"Category      : {result['aqi_category']['category']}")
     print(f"Dominant Factor: {result['dominant_factor']}\n")
 
     print("🔝 Top 5 Contributions:")
+
     for contrib in result["contributions"][:5]:
         print(f"  • {contrib['display']:25} | {contrib['pct']:5.1f}% | {contrib['direction']}")
 
