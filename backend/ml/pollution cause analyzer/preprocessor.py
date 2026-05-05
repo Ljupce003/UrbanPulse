@@ -341,7 +341,6 @@ def run():
     df_imputed.to_csv(IMPUTED_OUT_PATH, index=False)
     logger.info(f"Imputed dataset saved → {IMPUTED_OUT_PATH}")
 
-    logger.info(f"Final imputed shape: {df_imputed.shape[0]:,} rows × {df_imputed.shape[1]} columns")
     logger.info("Preprocessor completed successfully!")
 
 
