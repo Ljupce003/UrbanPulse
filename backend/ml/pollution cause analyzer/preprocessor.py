@@ -273,6 +273,10 @@ def smart_impute(df: pd.DataFrame) -> pd.DataFrame:
     df = df.sort_values("timestamp")
     df = df.set_index("timestamp")
 
+    null_ratio = df.isnull().mean()
+    cols_to_keep = null_ratio[null_ratio <= 0.01].index
+    df = df[cols_to_keep]
+
     pollution_cols = [c for c in df.columns if c in ["pm1", "pm25", "aqi"]]
     weather_cols = [c for c in df.columns if any(x in c for x in ["temp", "pressure", "wind", "precip"])]
     traffic_cols = [c for c in df.columns if "traffic" in c or "vehicle" in c]
@@ -335,9 +339,9 @@ def run():
 
     df_imputed = smart_impute(df)
     df_imputed.to_csv(IMPUTED_OUT_PATH, index=False)
-    logger.info(f"✅ Imputed dataset saved → {IMPUTED_OUT_PATH}")
+    logger.info(f"Imputed dataset saved → {IMPUTED_OUT_PATH}")
 
-    logger.info(f" Final imputed shape: {df_imputed.shape[0]:,} rows × {df_imputed.shape[1]} columns")
+    logger.info(f"Final imputed shape: {df_imputed.shape[0]:,} rows × {df_imputed.shape[1]} columns")
     logger.info("Preprocessor completed successfully!")
 
 
