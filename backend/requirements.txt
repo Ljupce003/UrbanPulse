@@ -10,3 +10,4 @@ azure-ai-inference
 azure-core
 openai
 python-multipart
+xgboost
