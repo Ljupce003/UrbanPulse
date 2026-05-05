@@ -8,7 +8,7 @@ def test_analyzer():
     print("🚀 Testing Pollution Analyzer Service...\n")
 
     load_analyzer()
-    print("✅ Model loaded successfully!\n")
+    print("Model loaded successfully!\n")
 
     sample_input = {
         "traffic_intensity": 0.78,
@@ -33,7 +33,7 @@ def test_analyzer():
     result = analyze(sample_input)
 
     print(f"Predicted AQI : {result['predicted_aqi']}")
-    print(f"Category      : {result['aqi_category']['category']}")
+    print(f"Category: {result['aqi_category']['category']}")
     print(f"Dominant Factor: {result['dominant_factor']}\n")
 
     print("🔝 Top 5 Contributions:")
