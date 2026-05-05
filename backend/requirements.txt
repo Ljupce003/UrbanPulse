@@ -11,3 +11,5 @@ azure-core
 openai
 python-multipart
 xgboost
+optuna
+shap
