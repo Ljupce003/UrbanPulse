@@ -83,6 +83,7 @@ rmse = np.sqrt(mean_squared_error(y_valid, preds))
 MODEL_DIR = Path(__file__).resolve().parent / "model"
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
+
 MODEL_PATH = MODEL_DIR / "lightgbm_model.pkl"
 
 joblib.dump({
