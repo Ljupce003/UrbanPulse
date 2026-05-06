@@ -1,9 +1,7 @@
 import pytest
 import numpy as np
 import pandas as pd
-from unittest.mock import patch, MagicMock, mock_open
-from pathlib import Path
-
+from unittest.mock import patch, MagicMock
 
 
 def _make_mock_model(return_value=42.0):
@@ -27,10 +25,9 @@ class TestLoadBundle:
         bundle = _make_bundle()
         with patch(f"{SERVICE}._bundle", None), \
              patch(f"{SERVICE}.joblib.load", return_value=bundle) as mock_load:
-            import importlib
-            import backend.services.traffic_pred_service as svc  # noqa: F401
+            import backend.services.ml.traffic_pred_service as svc  # noqa: F401
             # Reset cached bundle
-            import backend.services.traffic_pred_service as svc
+            import backend.services.ml.traffic_pred_service as svc
             svc._bundle = None
 
             result = svc.load_bundle()
@@ -41,7 +38,7 @@ class TestLoadBundle:
     def test_caches_bundle_after_first_load(self):
         bundle = _make_bundle()
         with patch(f"{SERVICE}.joblib.load", return_value=bundle) as mock_load:
-            import backend.services.traffic_pred_service as svc
+            import backend.services.ml.traffic_pred_service as svc
             svc._bundle = None
 
             svc.load_bundle()
@@ -53,7 +50,7 @@ class TestLoadBundle:
         existing_bundle = _make_bundle(rmse=99.0)
         with patch(f"{SERVICE}._bundle", existing_bundle), \
              patch(f"{SERVICE}.joblib.load") as mock_load:
-            import backend.services.traffic_pred_service as svc
+            import backend.services.ml.traffic_pred_service as svc
             svc._bundle = existing_bundle
 
             result = svc.load_bundle()
@@ -67,13 +64,13 @@ class TestGetModelAndRmse:
     def test_get_model_returns_model_from_bundle(self):
         bundle = _make_bundle()
         with patch(f"{SERVICE}.load_bundle", return_value=bundle):
-            import backend.services.traffic_pred_service as svc
+            import backend.services.ml.traffic_pred_service as svc
             assert svc.get_model() is bundle["model"]
 
     def test_get_rmse_returns_float(self):
         bundle = _make_bundle(rmse=7.5)
         with patch(f"{SERVICE}.load_bundle", return_value=bundle):
-            import backend.services.traffic_pred_service as svc
+            import backend.services.ml.traffic_pred_service as svc
             result = svc.get_rmse()
 
         assert isinstance(result, float)
@@ -83,7 +80,7 @@ class TestGetModelAndRmse:
         """Ensures int rmse stored in bundle is cast to float."""
         bundle = {"model": _make_mock_model(), "rmse": 5}  # int, not float
         with patch(f"{SERVICE}.load_bundle", return_value=bundle):
-            import backend.services.traffic_pred_service as svc
+            import backend.services.ml.traffic_pred_service as svc
             result = svc.get_rmse()
 
         assert isinstance(result, float)
@@ -94,7 +91,7 @@ class TestPredict:
     def test_returns_float(self):
         model = _make_mock_model(return_value=123.45)
         with patch(f"{SERVICE}.get_model", return_value=model):
-            import backend.services.traffic_pred_service as svc
+            import backend.services.ml.traffic_pred_service as svc
             result = svc.predict({"feature_a": 1, "feature_b": 2})
 
         assert isinstance(result, float)
@@ -103,7 +100,7 @@ class TestPredict:
     def test_passes_input_as_single_row_dataframe(self):
         model = _make_mock_model()
         with patch(f"{SERVICE}.get_model", return_value=model):
-            import backend.services.traffic_pred_service as svc
+            import backend.services.ml.traffic_pred_service as svc
             svc.predict({"speed": 60, "volume": 500})
 
         called_df = model.predict.call_args[0][0]
@@ -114,7 +111,7 @@ class TestPredict:
     def test_empty_input_dict_still_calls_predict(self):
         model = _make_mock_model(return_value=0.0)
         with patch(f"{SERVICE}.get_model", return_value=model):
-            import backend.services.traffic_pred_service as svc
+            import backend.services.ml.traffic_pred_service as svc
             result = svc.predict({})
 
         model.predict.assert_called_once()
@@ -127,7 +124,7 @@ class TestPredictBatch:
         model = MagicMock()
         model.predict.return_value = np.array([10.0, 20.0, 30.0])
         with patch(f"{SERVICE}.get_model", return_value=model):
-            import backend.services.traffic_pred_service as svc
+            import backend.services.ml.traffic_pred_service as svc
             result = svc.predict_batch([
                 {"feature": 1},
                 {"feature": 2},
@@ -142,7 +139,7 @@ class TestPredictBatch:
         model.predict.return_value = np.array([1.0, 2.0])
         records = [{"a": 1, "b": 2}, {"a": 3, "b": 4}]
         with patch(f"{SERVICE}.get_model", return_value=model):
-            import backend.services.traffic_pred_service as svc
+            import backend.services.ml.traffic_pred_service as svc
             svc.predict_batch(records)
 
         called_df = model.predict.call_args[0][0]
@@ -152,7 +149,7 @@ class TestPredictBatch:
         model = MagicMock()
         model.predict.return_value = np.array([55.5])
         with patch(f"{SERVICE}.get_model", return_value=model):
-            import backend.services.traffic_pred_service as svc
+            import backend.services.ml.traffic_pred_service as svc
             result = svc.predict_batch([{"x": 1}])
 
         assert result == pytest.approx([55.5])
@@ -161,7 +158,7 @@ class TestPredictBatch:
         model = MagicMock()
         model.predict.return_value = np.array([])
         with patch(f"{SERVICE}.get_model", return_value=model):
-            import backend.services.traffic_pred_service as svc
+            import backend.services.ml.traffic_pred_service as svc
             result = svc.predict_batch([])
 
         assert result == []
@@ -173,7 +170,7 @@ class TestCalculateAccuracy:
     """Pure function — no mocking needed."""
 
     def _accuracy(self, rmse, y_mean):
-        import backend.services.traffic_pred_service as svc
+        import backend.services.ml.traffic_pred_service as svc
         return svc.calculate_accuracy(rmse, y_mean)
 
     def test_perfect_model_gives_100_percent(self):

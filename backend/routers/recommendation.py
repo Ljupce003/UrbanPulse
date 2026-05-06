@@ -5,7 +5,7 @@ from fastapi import APIRouter, Query, HTTPException
 from backend.services.pollution_service import get_current_pollution
 from backend.services.weather_service import get_current_weather
 from backend.services.traffic_service import get_traffic_score
-from backend.services.recommendation_service import get_recommendation_from_llm
+from backend.services.ml.recommendation_service import get_recommendation_from_llm
 
 from backend.models.weather import AirQualityResponse
 from backend.models import TrafficScoreResponse, WeatherCurrentResponse

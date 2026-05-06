@@ -1,7 +1,7 @@
 """
 test_analyzer.py - Quick test for Pollution Analyzer Service
 """
-from backend.services.analyzer_service import load_analyzer, health_check, analyze, predict
+from backend.services.ml.analyzer_service import load_analyzer, health_check, analyze, predict
 
 
 def test_analyzer():

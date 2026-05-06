@@ -42,7 +42,9 @@ EXCLUDE_FROM_CONTRIBUTIONS = {
     "temp_min_c", "temp_max_c",
 } # IMPORTANT!!
 
-MODEL_DIR = Path(__file__).resolve().parent.parent / "ml" / "pollution cause analyzer" / "models"
+MODEL_DIR = Path(__file__).resolve().parent.parent.parent / "ml" / "pollution cause analyzer" / "models"
+
+logger.info(MODEL_DIR)
 
 _model: xgb.Booster | None = None
 _explainer = None
@@ -63,6 +65,7 @@ def get_aqi_category(aqi: float) -> dict[str, str]:
         if lo <= aqi <= hi:
             return {"category": label, "color": color}
     return {"category": "Hazardous", "color": "#7e0023"}
+
 
 
 def load_analyzer(model_dir: Path | None = None) -> None:

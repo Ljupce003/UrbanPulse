@@ -13,6 +13,9 @@ from backend.routers import status_router, weather_router, pollution_router, tra
 from backend.routers.historical_router import router as historical_router
 from backend.routers.recommendation import router as recommendations_router
 from backend.routers.dataset import router as dataset_router
+from backend.routers.pollution_analyzer import router as analyzer_router
+
+
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
@@ -59,6 +62,8 @@ app.include_router(dataset_router)
 app.include_router(recommendations_router, prefix="/api")
 
 app.include_router(historical_router, prefix="/api")
+app.include_router(analyzer_router)                                                  # ← add
+
 
 @app.get("/")
 def root():
