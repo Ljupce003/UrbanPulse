@@ -9,10 +9,10 @@ pip install xgboost shap scikit-learn optuna pandas numpy joblib
 
 ```bash
 # Step 1 — merge the 3 source CSVs into a single feature file
-python backend/ml/pollution_cause_analyzer/preprocessor.py
+run backend/ml/pollution cause analyzer/preprocessor.py
 
 # Step 2 — train the model and save all artefacts to models/
-python backend/ml/pollution_cause_analyzer/train.py
+run backend/ml/pollution cause analyzer/train.py
 ```
 
 ## Files
