@@ -12,7 +12,6 @@ Sliders the user controls:
 All other features are kept at their baseline values (e.g. dataset medians).
 """
 
-import numpy as np
 import pandas as pd
 import joblib
 from pathlib import Path
@@ -49,28 +48,13 @@ def simulate(
     aqi_model: str = "xgboost_aqi",
     pm25_model: str = "xgboost_pm25",
 ) -> dict:
-    """
-    Predict AQI (and optionally PM2.5) from adjusted traffic/temperature inputs.
-
-    Parameters
-    ----------
-    baseline         : pd.Series – median feature row (from build_baseline())
-    traffic_vol_median, traffic_intensity, is_rush_hour, temp_avg_c
-                     : slider values from the UI
-    aqi_model        : model filename stem under backend/models/
-    pm25_model       : optional second model; skipped if file not found
-
-    Returns
-    -------
-    {"aqi": float, "pm25": float | None}
-    """
     row = baseline.copy()
-    row["traffic_vol_median"]  = traffic_vol_median
-    row["traffic_intensity"]   = traffic_intensity
-    row["is_rush_hour"]        = int(is_rush_hour)
-    row["temp_avg_c"]          = temp_avg_c
-    row["temp_min_c"]          = temp_avg_c - 3
-    row["temp_max_c"]          = temp_avg_c + 3
+    row["traffic_vol_median"]    = traffic_vol_median
+    row["traffic_intensity"]     = traffic_intensity
+    row["is_rush_hour"]          = int(is_rush_hour)
+    row["temp_avg_c"]            = temp_avg_c
+    row["temp_min_c"]            = temp_avg_c - 3
+    row["temp_max_c"]            = temp_avg_c + 3
     row["traffic_temp_interact"] = traffic_vol_median * temp_avg_c
 
     X = pd.DataFrame([row])[FEATURE_COLS]
@@ -85,10 +69,7 @@ def simulate(
     return result
 
 
-def build_baseline(processed_csv: str | Path) -> pd.Series:
-    """
-    Build a representative baseline row from the processed dataset.
-    Call once at startup; pass the result into every simulate() call.
-    """
-    df = pd.read_csv(processed_csv, parse_dates=["timestamp"])
+def build_baseline() -> pd.Series:
+    data_path = Path(__file__).resolve().parents[3] / "data" / "processed" / "imputed_dataset.csv"
+    df = pd.read_csv(data_path, parse_dates=["timestamp"])
     return df[FEATURE_COLS].median()
