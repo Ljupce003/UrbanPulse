@@ -62,7 +62,7 @@ app.include_router(dataset_router)
 app.include_router(recommendations_router, prefix="/api")
 
 app.include_router(historical_router, prefix="/api")
-app.include_router(analyzer_router)                                                  # ← add
+app.include_router(analyzer_router)
 
 
 @app.get("/")
