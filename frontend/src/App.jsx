@@ -9,6 +9,8 @@ import Profile from './pages/Profile'
 import UserManagement from "./pages/ManageUsers.jsx";
 import Analyzer from './pages/Analyzer' // update Analyzer.jsx component when ready
 import DataManagement from './pages/DataManagement'
+import Recommendations from './pages/Recommendations'
+import Status from './pages/Status'
 // import Simulator from './pages/Simulator' - add when ready
 
 const HIDDEN_NAV = ['/login', '/auth/callback']
@@ -45,6 +47,14 @@ export default function App() {
                 <Route path="/analyzer" element={
                     <ProtectedRoute><Analyzer/></ProtectedRoute>
                 }/>
+                <Route path="/recommendations" element={
+                    <ProtectedRoute><Recommendations/></ProtectedRoute>
+                }/>
+                <Route path="/status" element={
+                    <ProtectedRoute allowedRoles={['admin']}>
+                        <Status/>
+                    </ProtectedRoute>
+                }/>
                 <Route path="/simulate" element={
                     <ProtectedRoute>
                         <div style={{color: '#fff', padding: '100px 40px', fontFamily: 'monospace'}}>
@@ -53,13 +63,6 @@ export default function App() {
                     </ProtectedRoute>
                 }/>
 
-                <Route path="/admin/users" element={
-                    <ProtectedRoute allowedRoles={['admin']}>
-                        <div style={{color: '#fff', padding: '100px 40px', fontFamily: 'monospace'}}>
-                            User Management — coming soon
-                        </div>
-                    </ProtectedRoute>
-                }/>
 
                 <Route path="/data" element={
                     <ProtectedRoute allowedRoles={['analyst', 'admin']}>

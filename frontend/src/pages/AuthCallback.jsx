@@ -27,7 +27,7 @@ export default function AuthCallback() {
     }
 
     run()
-  }, [])
+  }, [navigate, registerSession])
 
   return (
     <div style={{

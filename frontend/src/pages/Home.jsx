@@ -58,6 +58,7 @@ const TRAFFIC_CLIENT_CACHE_MS = Number(import.meta.env.VITE_TRAFFIC_CLIENT_CACHE
 
 const QUICK_ACTIONS = [
   { label: 'POLLUTION ANALYZER', desc: 'Break down pollution contribution factors', to: '/analyzer', roles: ['general_user','analyst','admin'] },
+  { label: 'DAILY RECOMMENDATIONS', desc: 'Get personalized travel and activity recommendations', to: '/recommendations', roles: ['general_user','analyst','admin'] },
   { label: 'SCENARIO SIMULATOR', desc: 'Simulate rainfall, traffic, and pollution impact', to: '/simulate', roles: ['general_user','analyst','admin'] },
   { label: 'DATA MANAGEMENT', desc: 'Upload and normalize datasets', to: '/data', roles: ['analyst','admin'] },
   { label: 'USER MANAGEMENT', desc: 'Manage roles and permissions', to: '/admin/users', roles: ['admin'] },

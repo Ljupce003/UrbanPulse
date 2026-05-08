@@ -21,11 +21,12 @@ export default function Navbar() {
   const navLinks = [
     { to: '/',         label: 'DASHBOARD' },
     { to: '/analyzer', label: 'ANALYZER'  },
+    { to: '/recommendations', label: 'RECOMMENDATIONS' },
     { to: '/simulate', label: 'SIMULATOR' },
     ...(role === 'analyst' || role === 'admin'
       ? [{ to: '/data', label: 'DATA' }] : []),
     ...(role === 'admin'
-      ? [{ to: '/admin/users', label: 'USERS' }] : []),
+      ? [{ to: '/admin/users', label: 'USERS' }, { to: '/status', label: 'STATUS' }] : []),
   ]
 
   return (

@@ -184,14 +184,36 @@ def get_traffic_score(
     if not settings.LOCATIONIQ_API_KEY:
         raise HTTPException(status_code=500, detail="Missing LOCATIONIQ_API_KEY configuration")
 
-    if city and any(v is not None for v in [start_lat, start_lon, end_lat, end_lon]):
-        raise HTTPException(status_code=400, detail="Use city or explicit route coordinates, not both")
+    # Validate partial coordinates
+    if (start_lat is None) != (start_lon is None):
+        raise HTTPException(status_code=400, detail="Provide both start_lat and start_lon together when specifying a start point")
+    if (end_lat is None) != (end_lon is None):
+        raise HTTPException(status_code=400, detail="Provide both end_lat and end_lon together when specifying an end point")
 
     location_city = None
     location_country_code = None
-    if city:
+
+    use_start = start_lat is not None and start_lon is not None
+    use_end = end_lat is not None and end_lon is not None
+
+    if use_start and use_end:
+        origin = RoutePoint(lat=float(start_lat), lon=float(start_lon))
+        destination = RoutePoint(lat=float(end_lat), lon=float(end_lon))
+    elif city and not (use_start or use_end):
         origin, destination, location_city, location_country_code = _build_city_route(city, country_code)
+    elif city and (use_start or use_end):
+        # Partial route with city: use explicit endpoint(s) and derive missing endpoint from city route
+        city_origin, city_destination, location_city, location_country_code = _build_city_route(city, country_code)
+        if use_start and not use_end:
+            origin = RoutePoint(lat=float(start_lat), lon=float(start_lon))
+            destination = city_destination
+        elif use_end and not use_start:
+            origin = city_origin
+            destination = RoutePoint(lat=float(end_lat), lon=float(end_lon))
+        else:
+            origin, destination = city_origin, city_destination
     else:
+        # No city; either provide full coordinates or leave all None for defaults
         origin, destination = _build_coordinates_route(start_lat, start_lon, end_lat, end_lon)
         if all(v is None for v in [start_lat, start_lon, end_lat, end_lon]):
             location_city = "Skopje"
@@ -233,19 +255,17 @@ def get_traffic_score_auto_route(
     """
     Generate automatic route and fetch traffic score.
     """
-    if city and (start_lat is not None or start_lon is not None):
-        raise HTTPException(status_code=400, detail="Use city or start_lat/start_lon, not both")
-
-    if not city and ((start_lat is None) != (start_lon is None)):
+    # Validate start coord pair when provided
+    if (start_lat is None) != (start_lon is None):
         raise HTTPException(status_code=400, detail="Provide both start_lat and start_lon together")
 
-    if city:
-        city_point, city_name, city_country = _resolve_city_from_db_only(city=city, country_code=country_code)
-        origin = RoutePoint(lat=city_point.lat, lon=city_point.lon)
-    elif start_lat is not None and start_lon is not None:
+    if start_lat is not None and start_lon is not None:
         origin = RoutePoint(lat=float(start_lat), lon=float(start_lon))
         city_name = None
         city_country = None
+    elif city:
+        city_point, city_name, city_country = _resolve_city_from_db_only(city=city, country_code=country_code)
+        origin = RoutePoint(lat=city_point.lat, lon=city_point.lon)
     else:
         settings = get_settings()
         origin = RoutePoint(

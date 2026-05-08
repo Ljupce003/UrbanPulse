@@ -26,21 +26,89 @@ def read_traffic_score(
     - Coordinate mode: provide all of `start_lat,start_lon,end_lat,end_lon`.
     - Empty request: uses default route from backend env.
     """
-    if city and any(v is not None for v in [start_lat, start_lon, end_lat, end_lon]):
-        raise HTTPException(status_code=400, detail="Use city or explicit route coordinates, not both")
+    # Allow combinations: explicit coordinates may be provided alongside city
 
-    if not city:
-        supplied = [start_lat, start_lon, end_lat, end_lon]
-        if any(v is not None for v in supplied) and any(v is None for v in supplied):
-            raise HTTPException(status_code=400, detail="Provide start_lat,start_lon,end_lat,end_lon together")
+    # Validate partial coordinates for start/end
+    if (start_lat is None) != (start_lon is None):
+        raise HTTPException(status_code=400, detail="Provide both start_lat and start_lon together when specifying a start point")
+    if (end_lat is None) != (end_lon is None):
+        raise HTTPException(status_code=400, detail="Provide both end_lat and end_lon together when specifying an end point")
+
+    # Resolve precedence:
+    # - If explicit full route provided (start+end) -> use that (ignore city)
+    # - If explicit start+end not provided but city provided and one of start/end is provided,
+    #   use city as the missing endpoint (e.g., city as origin or destination)
+    # - If only city provided -> city mode
+    # - If nothing provided -> backend default route
+
+    use_start = start_lat is not None and start_lon is not None
+    use_end = end_lat is not None and end_lon is not None
+
+    resolved_start_lat = None
+    resolved_start_lon = None
+    resolved_end_lat = None
+    resolved_end_lon = None
+
+    if use_start and use_end:
+        # Full explicit route
+        resolved_start_lat = start_lat
+        resolved_start_lon = start_lon
+        resolved_end_lat = end_lat
+        resolved_end_lon = end_lon
+        resolved_city = None
+    elif city and not (use_start or use_end):
+        # Pure city mode
+        resolved_city = city
+    elif city and (use_start or use_end):
+        # City + partial route: fill missing endpoint(s) with city
+        resolved_city = None
+        if use_start and not use_end:
+            # start provided, city as end
+            resolved_start_lat = start_lat
+            resolved_start_lon = start_lon
+            resolved_end_lat = None
+            resolved_end_lon = None
+            # get_traffic_score will resolve destination from city when end coords are None
+            # pass city separately so service can resolve end from city
+            return get_traffic_score(
+                city=city,
+                country_code=country_code,
+                start_lat=resolved_start_lat,
+                start_lon=resolved_start_lon,
+                end_lat=None,
+                end_lon=None,
+            )
+        elif use_end and not use_start:
+            # end provided, city as start
+            resolved_end_lat = end_lat
+            resolved_end_lon = end_lon
+            return get_traffic_score(
+                city=city,
+                country_code=country_code,
+                start_lat=None,
+                start_lon=None,
+                end_lat=resolved_end_lat,
+                end_lon=resolved_end_lon,
+            )
+        else:
+            # shouldn't reach here
+            resolved_city = city
+    else:
+        # No city; if any coords provided they must be full start+end or start+end optional per empty request
+        if use_start and not use_end:
+            # Start provided but no end -> invalid
+            raise HTTPException(status_code=400, detail="Provide both start and end coordinates together or include a city")
+        if use_end and not use_start:
+            raise HTTPException(status_code=400, detail="Provide both start and end coordinates together or include a city")
+        resolved_city = None
 
     return get_traffic_score(
-        city=city,
+        city=resolved_city,
         country_code=country_code,
-        start_lat=start_lat,
-        start_lon=start_lon,
-        end_lat=end_lat,
-        end_lon=end_lon,
+        start_lat=resolved_start_lat,
+        start_lon=resolved_start_lon,
+        end_lat=resolved_end_lat,
+        end_lon=resolved_end_lon,
     )
 
 
@@ -64,9 +132,10 @@ def read_traffic_score_auto(
     Destination is generated from origin using `distance_m` and `bearing_deg`.
     """
     if city and (start_lat is not None or start_lon is not None):
-        raise HTTPException(status_code=400, detail="Use city or start_lat/start_lon, not both")
+        # Allow explicit start coordinates to override city origin. Validate pairs below.
+        pass
 
-    if not city and ((start_lat is None) != (start_lon is None)):
+    if (start_lat is None) != (start_lon is None):
         raise HTTPException(status_code=400, detail="Provide both start_lat and start_lon together")
 
     return get_traffic_score_auto_route(
