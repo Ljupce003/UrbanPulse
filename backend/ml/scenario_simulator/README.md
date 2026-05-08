@@ -1,8 +1,10 @@
-## Simulators role
+## Simulators
 
-Simulator 1: traffic + temperature → pollution (AQI/PM2.5)
-Simulator 2: pollution → temperature effect
+**Simulator 1**: Traffic + Temperature → Pollution (AQI/PM)  
+**Simulator 2**: Pollution → Temperature effect
 
-### Inputs per simulator
-- Inputs for sim 1: ```traffic_vol_median, traffic_intensity, is_rush_hour, temp_avg_c, traffic_temp_interact```
-- Input for sim 2: ```aqi, pm25, pm1 → predict temp_avg_c```
+### Inputs
+- **Sim 1**: `traffic_vol_median`, `temp_avg_c` (auto-updates interaction)
+- **Sim 2**: `aqi`, `pm25`, `pm1`
+
+Both automatically use latest row from `imputed_dataset.csv`.
