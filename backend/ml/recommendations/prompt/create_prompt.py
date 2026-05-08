@@ -23,6 +23,7 @@ def create_prompt (air_quality_data : AirQualityResponse,
     - Or similar advice.
 
     Be direct, honest, and helpful. Explain your reasoning briefly and write 2-3 short sentences in total.
+    Provide a confidence label of Low, Medium, High regarding your recommendation.
     """
     return prompt
 
