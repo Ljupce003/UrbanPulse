@@ -1,22 +1,18 @@
-from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any
 
-class TrafficPollutionRequest(BaseModel):
-    traffic_vol_median: float = Field(..., ge=0, description="Vehicles per interval")
-    traffic_intensity: float = Field(..., ge=0.0, le=1.0, description="Normalised traffic intensity [0-1]")
-    is_rush_hour: bool = Field(..., description="Whether it is rush hour")
-    temp_avg_c: float = Field(..., ge=-30, le=50, description="Average temperature in °C")
+from pydantic import BaseModel
 
 
-class TrafficPollutionResponse(BaseModel):
-    aqi: float
-    pm25: float | None
+class TrafficTempRequest(BaseModel):
+    traffic_vol_median: Optional[float] = None
+    temp_avg_c: Optional[float] = None
+    temp_min_c: Optional[float] = None
+    temp_max_c: Optional[float] = None
+    overrides: Optional[Dict[str, Any]] = None
 
 
-class PollutionTemperatureRequest(BaseModel):
-    aqi: float = Field(..., ge=0, description="Air Quality Index")
-    pm25: float = Field(..., ge=0, description="PM2.5 concentration in µg/m³")
-    pm1: float = Field(..., ge=0, description="PM1 concentration in µg/m³")
-
-
-class PollutionTemperatureResponse(BaseModel):
-    temp_avg_c: float
+class PollutionTempRequest(BaseModel):
+    aqi: Optional[float] = None
+    pm25: Optional[float] = None
+    pm1: Optional[float] = None
+    overrides: Optional[Dict[str, Any]] = None

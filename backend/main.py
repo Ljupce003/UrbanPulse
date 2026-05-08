@@ -14,6 +14,7 @@ from backend.routers.historical_router import router as historical_router
 from backend.routers.recommendation import router as recommendations_router
 from backend.routers.dataset import router as dataset_router
 from backend.routers.pollution_analyzer import router as analyzer_router
+from backend.routers.what_if_router import router as what_if_router
 
 
 
@@ -63,7 +64,7 @@ app.include_router(recommendations_router, prefix="/api")
 
 app.include_router(historical_router, prefix="/api")
 app.include_router(analyzer_router)
-
+app.include_router(what_if_router, prefix="/api")
 
 @app.get("/")
 def root():
