@@ -15,6 +15,7 @@ from backend.routers.recommendation import router as recommendations_router
 from backend.routers.dataset import router as dataset_router
 from backend.routers.pollution_analyzer import router as analyzer_router
 from backend.routers.what_if_router import router as what_if_router
+from backend.routers.traffic_prediction import router as traffic_prediction_router
 
 
 
@@ -59,6 +60,7 @@ app.include_router(weather_router, prefix="/api")
 app.include_router(pollution_router, prefix="/api")
 app.include_router(traffic_router, prefix="/api")
 app.include_router(dataset_router)
+app.include_router(traffic_prediction_router, prefix="/api")
 
 app.include_router(recommendations_router, prefix="/api")
 
