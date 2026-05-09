@@ -1,4 +1,5 @@
 import {useEffect, useMemo, useState} from 'react'
+import datasetUrl from '../imputed/imputed_dataset.csv?url'
 
 const API = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8080').replace(/\/+$/, '')
 
@@ -96,21 +97,30 @@ export default function Analyzer() {
         }
     }, [])
 
-    const applyMeans = () => {
-        if (!stats || typeof stats !== 'object') return
-        const next = {...form}
+const applyDefaults = async () => {
+    try {
+        const res = await fetch(datasetUrl)
+        if (!res.ok) throw new Error()
+        const text = await res.text()
+        console.log(text)
+        const lines = text.trim().split('\n').filter(Boolean)
+        if (lines.length < 2) throw new Error()
+        const headers = lines[0].split(',').map(h => h.trim())
+        const lastRow = lines[lines.length - 1].split(',')
+        const next = { ...form }
         for (const field of CORE_FIELDS) {
-            const row = stats[field.key]
-            if (!row) continue
-            if (next[field.key] !== '') continue
-            const maybeMean = row.mean
-            if (typeof maybeMean === 'number' && Number.isFinite(maybeMean)) {
-                next[field.key] = String(Math.round(maybeMean * 1000) / 1000)
+            const idx = headers.indexOf(field.key)
+            if (idx === -1) continue
+            const val = lastRow[idx]?.trim()
+            if (val !== undefined && val !== '' && Number.isFinite(Number(val))) {
+                next[field.key] = val
             }
         }
         setForm(next)
+    } catch {
+        setError("⚠ Can't load defaults — import the processed dataset first! (data/processed/imputed_dataset.csv not found)")
     }
-
+}
     const runRequest = async (url, options, label) => {
         setLoadingAction(true)
         setError(null)
@@ -347,7 +357,7 @@ export default function Analyzer() {
 
                                     <div className="btn-row">
                                         <button className="btn btn-muted" onClick={() => setForm(EMPTY_FORM)} disabled={loadingAction}>CLEAR</button>
-                                        <button className="btn btn-muted" onClick={applyMeans} disabled={loadingAction || !stats}>FILL MEANS</button>
+                                        <button className="btn btn-muted" onClick={applyDefaults} disabled={loadingAction || loadingMeta}>LOAD DEFAULTS</button>
                                         {tab === 'analyze'
                                             ? <button className="btn" onClick={runAnalyze} disabled={loadingAction}>RUN SHAP ANALYSIS</button>
                                             : <button className="btn" onClick={runPredict} disabled={loadingAction}>RUN FAST PREDICT</button>}
