@@ -22,16 +22,16 @@ logger = logging.getLogger("traffic_prediction")
 
 df = pd.read_csv(DATA_PATH)
 
+print(df['traffic_vol_median'].describe())
+
 TARGET = "traffic_vol_median"
 
-# 🚨 IMPORTANT: sort by time BEFORE splitting (prevents leakage)
 df = df.sort_values("timestamp")
 
 X = df.drop(columns=[TARGET, "timestamp"])
 y = df[TARGET]
 
 
-# 🚦 time-based split (better for traffic forecasting)
 split_idx = int(len(df) * 0.8)
 
 X_train = X.iloc[:split_idx]

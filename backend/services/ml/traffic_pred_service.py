@@ -46,9 +46,9 @@ def predict(input_data: dict) -> float:
 
 
 def predict_batch(data: list[dict]) -> list[float]:
-    model = get_model()
-
     df = pd.DataFrame(data)
+
+    model = get_model()
     preds = model.predict(df)
 
     return preds.tolist()
