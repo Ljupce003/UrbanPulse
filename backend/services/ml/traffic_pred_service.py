@@ -4,13 +4,11 @@ from pathlib import Path
 import joblib
 import pandas as pd
 
-
 logger = logging.getLogger("traffic_prediction_service")
 
 MODEL_PATH = (
     Path(__file__).resolve().parents[2]
-    / "model"
-    / "lightgbm_model.pkl"
+    / "ml" / "traffic prediction" / "model" / "lightgbm_model.pkl"
 )
 
 _bundle = None
@@ -30,8 +28,16 @@ def get_model():
     return load_bundle()["model"]
 
 
-def get_rmse():
-    return float(load_bundle()["rmse"])
+def get_rmse() -> float:
+    bundle = load_bundle()
+    val = bundle.get("rmse") or bundle.get("test_rmse") or bundle.get("val_rmse")
+    return float(val) if val is not None else 0.0
+
+
+def get_r2() -> float:
+    bundle = load_bundle()
+    val = bundle.get("r2") or bundle.get("test_r2") or bundle.get("val_r2") or bundle.get("r2_score")
+    return float(val) if val is not None else 0.0
 
 
 def predict(input_data: dict) -> float:
@@ -44,22 +50,10 @@ def predict(input_data: dict) -> float:
 
 
 def predict_batch(data: list[dict]) -> list[float]:
-    model = get_model()
-
     df = pd.DataFrame(data)
+
+    model = get_model()
     preds = model.predict(df)
 
     return preds.tolist()
-
-
-def calculate_accuracy(rmse: float, y_mean: float) -> float:
-    if y_mean == 0:
-        return 0.0
-
-    error_ratio = rmse / y_mean
-    accuracy = (1 - error_ratio) * 100
-
-    return float(max(0.0, round(accuracy, 2)))
-
-
 

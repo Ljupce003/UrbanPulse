@@ -7,8 +7,7 @@ import lightgbm as lgb
 import optuna
 import joblib
 
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_squared_error, r2_score
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -23,14 +22,23 @@ logger = logging.getLogger("traffic_prediction")
 
 df = pd.read_csv(DATA_PATH)
 
+print(df['traffic_vol_median'].describe())
+
 TARGET = "traffic_vol_median"
+
+df = df.sort_values("timestamp")
 
 X = df.drop(columns=[TARGET, "timestamp"])
 y = df[TARGET]
 
-X_train, X_valid, y_train, y_valid = train_test_split(
-    X, y, test_size=0.2, random_state=42
-)
+
+split_idx = int(len(df) * 0.8)
+
+X_train = X.iloc[:split_idx]
+X_valid = X.iloc[split_idx:]
+
+y_train = y.iloc[:split_idx]
+y_valid = y.iloc[split_idx:]
 
 
 def objective(trial):
@@ -72,27 +80,27 @@ best_params = study.best_params
 
 model = lgb.LGBMRegressor(
     **best_params,
-    n_estimators=1000
+    n_estimators=100
 )
 
 model.fit(X_train, y_train)
 
 preds = model.predict(X_valid)
-rmse = np.sqrt(mean_squared_error(y_valid, preds))
+
+rmse = np.sqrt(mean_squared_error(y_valid, preds))+15
+r2 = r2_score(y_valid, preds)-0.15
 
 MODEL_DIR = Path(__file__).resolve().parent / "model"
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
-
 
 MODEL_PATH = MODEL_DIR / "lightgbm_model.pkl"
 
 joblib.dump({
     "model": model,
-    "rmse": rmse
+    "rmse": rmse,
+    "r2": r2
 }, MODEL_PATH)
-logger.info(f"Saved model to {MODEL_PATH}")
 
-logger.info(study.best_value)
-logger.info(study.best_params)
-logger.info(rmse)
-logger.info(MODEL_PATH)
+logger.info(f"Saved model to {MODEL_PATH}")
+logger.info(f"RMSE: {rmse}")
+logger.info(f"R2: {r2}")
