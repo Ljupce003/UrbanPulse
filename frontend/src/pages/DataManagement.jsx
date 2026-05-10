@@ -140,8 +140,8 @@ export default function DataManagement() {
     const handleFile = useCallback(async (file) => {
         if (!file) return
         const ext = file.name.split('.').pop().toLowerCase()
-        if (!['csv', 'json'].includes(ext)) {
-            setError('Only CSV and JSON files are supported');
+        if (!['csv'].includes(ext)) {
+            setError('Only CSV files are supported');
             return
         }
         setError(null)
@@ -189,12 +189,6 @@ export default function DataManagement() {
 
             if (ext === 'csv') {
                 ({headers, rows} = parseCSV(text))
-            } else {
-                const parsed = JSON.parse(text)
-                const arr = Array.isArray(parsed) ? parsed : parsed.data ?? []
-                if (!arr.length) throw new Error('JSON file is empty')
-                headers = Object.keys(arr[0])
-                rows = arr
             }
 
             setFileHeaders(headers)
@@ -443,8 +437,8 @@ export default function DataManagement() {
                                 <div className="dropzone-text">
                                     {storeLoading ? 'UPLOADING TO SUPABASE STORAGE...' : 'DROP FILE HERE OR CLICK TO BROWSE'}
                                 </div>
-                                <div className="dropzone-sub">CSV or JSON · max 50,000 rows</div>
-                                <input ref={fileRef} type="file" accept=".csv,.json" style={{display: 'none'}}
+                                <div className="dropzone-sub">CSV · max 50,000 rows</div>
+                                <input ref={fileRef} type="file" accept=".csv" style={{display: 'none'}}
                                        onChange={onFileInput}/>
                             </div>
 
