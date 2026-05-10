@@ -42,12 +42,16 @@ def _resolve_city_from_db_only(city: str, country_code: Optional[str]) -> tuple[
 
 
 def _derive_level(score: float) -> tuple[str, str]:
-    if score <= 4.0:
-        return "Heavy Traffic", "red"
-    if score <= 7.0:
-        return "Moderate Traffic", "yellow"
-    return "Free Flow", "green"
+    if score <= 2.5:
+        return "Low Traffic", "green"
 
+    if score <= 5.0:
+        return "Medium Traffic", "yellow"
+
+    if score <= 7.5:
+        return "High Traffic", "orange"
+
+    return "Very High Traffic", "red"
 
 def _calculate_score(distance_m: float, duration_s: float, free_flow_kmh: float) -> tuple[float, float]:
     if duration_s <= 0:
