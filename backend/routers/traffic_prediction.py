@@ -15,6 +15,10 @@ logger = logging.getLogger("traffic_prediction_router")
 
 router = APIRouter(prefix="/traffic-prediction", tags=["Traffic Prediction"])
 
+# Dataset stats for normalization
+TRAFFIC_MIN = 30.479167
+TRAFFIC_MAX = 171.187500
+
 
 class TrafficPredictionResponse(BaseModel):
     predicted_traffic_volume: float
@@ -27,12 +31,19 @@ class TrafficPredictionResponse(BaseModel):
     message: str
 
 
+def normalize_traffic(volume: float) -> float:
+    """Normalize traffic volume to [0, 10] range using dataset min/max."""
+    normalized = (volume - TRAFFIC_MIN) / (TRAFFIC_MAX - TRAFFIC_MIN) * 10
+    return round(float(np.clip(normalized, 0, 10)), 2)
+
+
 def get_traffic_level(volume: float) -> str:
-    if volume < 70:
+    score = normalize_traffic(volume)
+    if score < 2.5:
         return "low"
-    elif volume < 130:
+    elif score < 5.0:
         return "medium"
-    elif volume < 150:
+    elif score < 7.5:
         return "high"
     else:
         return "very_high"
@@ -104,7 +115,7 @@ async def predict_next_hour(
     traffic_level = get_traffic_level(predicted_traffic)
 
     return TrafficPredictionResponse(
-        predicted_traffic_volume=round(float(predicted_traffic), 2),
+        predicted_traffic_volume=normalize_traffic(predicted_traffic),
         traffic_level=traffic_level,
         rmse=round(float(get_rmse()), 4),
         r2=round(float(get_r2()), 4),
