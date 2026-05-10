@@ -11,7 +11,7 @@ import Analyzer from './pages/Analyzer' // update Analyzer.jsx component when re
 import DataManagement from './pages/DataManagement'
 import Recommendations from './pages/Recommendations'
 import Status from './pages/Status'
-// import Simulator from './pages/Simulator' - add when ready
+import Simulator from './pages/Simulator'
 
 const HIDDEN_NAV = ['/login', '/auth/callback']
 
@@ -56,11 +56,7 @@ export default function App() {
                     </ProtectedRoute>
                 }/>
                 <Route path="/simulate" element={
-                    <ProtectedRoute>
-                        <div style={{color: '#fff', padding: '100px 40px', fontFamily: 'monospace'}}>
-                            Scenario Simulator — coming soon
-                        </div>
-                    </ProtectedRoute>
+                    <ProtectedRoute><Simulator/></ProtectedRoute>
                 }/>
 
 

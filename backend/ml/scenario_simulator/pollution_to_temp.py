@@ -9,7 +9,8 @@ class PollutionTempSimulator:
     def __init__(self):
         self.base_df = None
 
-        pollution_model_path = Path("ml/pollution cause analyzer/models/xgb_aqi.ubj")
+        ml_dir = Path(__file__).resolve().parents[1]
+        pollution_model_path = ml_dir / "pollution cause analyzer" / "models" / "xgb_aqi.ubj"
 
         self.pollution_model = xgb.Booster()
         self.pollution_model.load_model(str(pollution_model_path))

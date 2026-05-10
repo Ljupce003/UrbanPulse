@@ -9,8 +9,9 @@ class TrafficTempPollutionSimulator:
     def __init__(self):
         self.base_df = None
 
-        traffic_model_path = Path("ml/traffic prediction/model/lightgbm_model.pkl")
-        pollution_model_path = Path("ml/pollution cause analyzer/models/xgb_aqi.ubj")
+        ml_dir = Path(__file__).resolve().parents[1]
+        traffic_model_path = ml_dir / "traffic prediction" / "model" / "lightgbm_model.pkl"
+        pollution_model_path = ml_dir / "pollution cause analyzer" / "models" / "xgb_aqi.ubj"
 
         with open(traffic_model_path, "rb") as f:
             self.traffic_model = pickle.load(f)
