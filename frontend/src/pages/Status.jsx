@@ -250,29 +250,35 @@ export default function Status() {
                                     <div className="card-header">
                                         <div className="card-title">ML ANALYZER</div>
                                         <div className={`status-dot ${
-                                            analyzerHealth?.status === 'ready' ? 'ok' :
-                                                analyzerHealth?.status === 'loading' ? 'warning' : 'error'
+                                            analyzerHealth?.loaded === true ? 'ok' : 'warning'
                                         }`}/>
                                     </div>
                                     <div className="card-content">
                                         <div className="info-row">
                                             <span className="info-label">STATUS</span>
                                             <span className="info-value">
-                                                {analyzerHealth?.status === 'ready' ? '🟢 READY' :
-                                                    analyzerHealth?.status === 'loading' ? '🟡 LOADING' : '🔴 ERROR'}
+                                                {analyzerHealth?.loaded === true ? '🟢 READY' : '🟡 LOADING'}
                                             </span>
                                         </div>
-                                        {analyzerHealth?.version && (
+                                        {analyzerHealth?.model && (
                                             <div className="info-row">
-                                                <span className="info-label">VERSION</span>
-                                                <span className="info-value">{analyzerHealth.version}</span>
+                                                <span className="info-label">MODEL</span>
+                                                <span className="info-value">{analyzerHealth.model}</span>
                                             </div>
                                         )}
-                                        {analyzerHealth?.message && (
+                                        {analyzerHealth?.n_features && (
                                             <div className="info-row">
-                                                <span className="info-label">MESSAGE</span>
+                                                <span className="info-label">NUMBER OF FEATURES</span>
                                                 <span className="info-value" style={{fontSize: '10px', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis'}}>
-                                                    {analyzerHealth.message}
+                                                    {analyzerHealth.n_features}
+                                                </span>
+                                            </div>
+                                        )}
+                                        {analyzerHealth?.target && (
+                                            <div className="info-row">
+                                                <span className="info-label">TARGET</span>
+                                                <span className="info-value" style={{fontSize: '10px', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis'}}>
+                                                    {analyzerHealth.target}
                                                 </span>
                                             </div>
                                         )}

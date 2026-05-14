@@ -26,6 +26,9 @@ export default function Recommendations() {
     const [lon, setLon] = useState('')
     const [cities, setCities] = useState([])
     const [citiesLoading, setCitiesLoading] = useState(true)
+    const [citySearchOpen, setCitySearchOpen] = useState(false)
+    const [citySearchInput, setCitySearchInput] = useState('')
+    const citySearchRef = useRef(null)
 
     // Traffic route (optional)
     const [includeTraffic, setIncludeTraffic] = useState(false)
@@ -53,10 +56,24 @@ export default function Recommendations() {
     const endMarkerRef = useRef(null)
     const routeLineRef = useRef(null)
     const mapSelectTargetRef = useRef('start')
+    const locationMapContainerRef = useRef(null)
+    const locationMapRef = useRef(null)
+    const locationMarkerRef = useRef(null)
 
     useEffect(() => {
         mapSelectTargetRef.current = mapSelectTarget
     }, [mapSelectTarget])
+
+    // Close city search dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (citySearchRef.current && !citySearchRef.current.contains(e.target)) {
+                setCitySearchOpen(false)
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside)
+        return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [])
 
     // Fetch cities on mount
     useEffect(() => {
@@ -95,6 +112,12 @@ export default function Recommendations() {
         }))
     }, [cities])
 
+    const filteredCityOptions = useMemo(() => {
+        if (!citySearchInput.trim()) return cityOptions
+        const query = citySearchInput.toLowerCase()
+        return cityOptions.filter(o => o.label.toLowerCase().includes(query))
+    }, [cityOptions, citySearchInput])
+
     const selectedCityLocation = useMemo(() => {
         const found = cityOptions.find(o => `${o.city}::${o.country_code || ''}` === `${city}::${country || ''}`)
         if (!found) return null
@@ -103,6 +126,15 @@ export default function Recommendations() {
         if (!Number.isFinite(latNum) || !Number.isFinite(lonNum)) return null
         return {lat: latNum, lon: lonNum}
     }, [cityOptions, city, country])
+
+    const locationMapCenter = useMemo(() => {
+        const latNum = Number(lat)
+        const lonNum = Number(lon)
+        if (Number.isFinite(latNum) && Number.isFinite(lonNum)) return [latNum, lonNum]
+        if (selectedCityLocation) return [selectedCityLocation.lat, selectedCityLocation.lon]
+        if (cities[0]?.lat && cities[0]?.lon) return [Number(cities[0].lat), Number(cities[0].lon)]
+        return [20, 0]
+    }, [lat, lon, selectedCityLocation, cities])
 
     const routeMapCenter = useMemo(() => {
         if (routeInputMode === 'city' && selectedCityLocation) {
@@ -128,6 +160,46 @@ export default function Recommendations() {
             routeLineRef.current = null
         }
     }, [])
+
+    const clearLocationMarker = useCallback(() => {
+        if (locationMarkerRef.current) {
+            locationMarkerRef.current.remove()
+            locationMarkerRef.current = null
+        }
+    }, [])
+
+    const syncLocationMap = useCallback(() => {
+        if (!locationMapRef.current) return
+        const map = locationMapRef.current
+        const latNum = Number(lat)
+        const lonNum = Number(lon)
+
+        clearLocationMarker()
+
+        if (Number.isFinite(latNum) && Number.isFinite(lonNum)) {
+            locationMarkerRef.current = L.marker([latNum, lonNum]).addTo(map)
+            map.setView([latNum, lonNum], Math.max(map.getZoom(), 10), {animate: true})
+        } else {
+            map.setView(locationMapCenter, 6, {animate: false})
+        }
+    }, [clearLocationMarker, lat, lon, locationMapCenter])
+
+    useEffect(() => {
+        if (!selectedCityLocation) return
+
+        if (useCity || (lat === '' && lon === '')) {
+            setLat(selectedCityLocation.lat.toFixed(6))
+            setLon(selectedCityLocation.lon.toFixed(6))
+        }
+    }, [lat, lon, selectedCityLocation, useCity])
+
+    // Sync city search input with selected city
+    useEffect(() => {
+        const selected = cityOptions.find(o => `${o.city}::${o.country_code}` === `${city}::${country}`)
+        if (selected) {
+            setCitySearchInput(selected.label)
+        }
+    }, [city, country, cityOptions])
 
     const syncMapOverlays = useCallback(() => {
         if (!mapRef.current) return
@@ -201,8 +273,50 @@ export default function Recommendations() {
         syncMapOverlays()
     }, [includeTraffic, routeInputMode, routeMapCenter, startLat, startLon, endLat, endLon, syncMapOverlays])
 
+    // Cleanup location map when switching away from coordinates mode
+    useEffect(() => {
+        if (useCity && locationMapRef.current) {
+            locationMapRef.current.remove()
+            locationMapRef.current = null
+            clearLocationMarker()
+        }
+    }, [useCity, clearLocationMarker])
+
+    useEffect(() => {
+        if (useCity || !locationMapContainerRef.current) return
+
+        if (!locationMapRef.current) {
+            locationMapRef.current = L.map(locationMapContainerRef.current, {
+                zoomControl: true,
+                scrollWheelZoom: true,
+            }).setView(locationMapCenter, 6)
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors',
+                maxZoom: 19,
+            }).addTo(locationMapRef.current)
+
+            locationMapRef.current.on('click', (e) => {
+                const {lat, lng} = e.latlng
+                setUseCity(false)
+                setLat(lat.toFixed(6))
+                setLon(lng.toFixed(6))
+                setError(null)
+            })
+        } else {
+            locationMapRef.current.setView(locationMapCenter, locationMapRef.current.getZoom(), {animate: false})
+            setTimeout(() => locationMapRef.current?.invalidateSize(), 0)
+        }
+
+        syncLocationMap()
+    }, [locationMapCenter, syncLocationMap, useCity, lat, lon])
+
     useEffect(() => {
         return () => {
+            if (locationMapRef.current) {
+                locationMapRef.current.remove()
+                locationMapRef.current = null
+            }
             if (mapRef.current) {
                 mapRef.current.remove()
                 mapRef.current = null
@@ -384,11 +498,15 @@ export default function Recommendations() {
         }
     }
 
-    const handleCityChange = (e) => {
-        const selected = cityOptions.find(o => o.value === e.target.value)
-        if (selected) {
-            setCity(selected.city)
-            setCountry(selected.country_code)
+
+    const handleCitySelect = (option) => {
+        setCity(option.city)
+        setCountry(option.country_code)
+        setCitySearchInput(option.label)
+        setCitySearchOpen(false)
+        if (Number.isFinite(Number(option.lat)) && Number.isFinite(Number(option.lon))) {
+            setLat(Number(option.lat).toFixed(6))
+            setLon(Number(option.lon).toFixed(6))
         }
     }
 
@@ -492,6 +610,79 @@ export default function Recommendations() {
         }
         .route-mode-note {
           font-size: 11px; color: rgba(148,163,184,0.6); margin-top: 8px;
+        }
+
+        .city-search-container {
+          position: relative;
+        }
+
+        .city-search-input {
+          width: 100% !important;
+          padding: 10px 12px !important;
+          background: rgba(10,16,28,0.8) !important;
+          border: 1px solid rgba(59,130,246,0.15) !important;
+          border-radius: 3px !important;
+          color: #e2e8f0 !important;
+          font-family: 'Space Mono', monospace !important;
+          font-size: 12px !important;
+          outline: none !important;
+          transition: border-color 0.2s !important;
+        }
+
+        .city-search-input:focus {
+          border-color: rgba(59,130,246,0.4) !important;
+        }
+
+        .city-search-dropdown {
+          position: absolute;
+          top: 100%;
+          left: 0;
+          right: 0;
+          background: rgba(10,16,28,0.95);
+          border: 1px solid rgba(59,130,246,0.2);
+          border-top: none;
+          border-radius: 0 0 3px 3px;
+          max-height: 240px;
+          overflow-y: auto;
+          z-index: 1000;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+
+        .city-search-item {
+          padding: 10px 12px;
+          background: transparent;
+          border: none;
+          color: rgba(148,163,184,0.9);
+          font-family: 'Space Mono', monospace;
+          font-size: 11px;
+          cursor: pointer;
+          transition: background-color 0.2s;
+          border-bottom: 1px solid rgba(59,130,246,0.08);
+        }
+
+        .city-search-item:last-child {
+          border-bottom: none;
+        }
+
+        .city-search-item:hover {
+          background: rgba(59,130,246,0.12);
+          color: #3b82f6;
+        }
+
+        .city-search-no-results {
+          padding: 12px;
+          color: rgba(148,163,184,0.5);
+          font-family: 'Space Mono', monospace;
+          font-size: 11px;
+          text-align: center;
+        }
+
+        .location-map {
+          height: 320px;
+          border: 1px solid rgba(59,130,246,0.18);
+          border-radius: 4px;
+          overflow: hidden;
+          background: rgba(10,16,28,0.8);
         }
 
         .checkbox-group {
@@ -618,51 +809,82 @@ export default function Recommendations() {
                             <div className="form-section">
                                 <div className="form-group">
                                     <label className="form-label">CITY</label>
-                                    <select
-                                        value={`${city}::${country}`}
-                                        onChange={handleCityChange}
-                                        disabled={citiesLoading}
-                                    >
-                                        {cities.length === 0 ? (
-                                            <option value={`${city}::${country}`}>{city}, {country}</option>
-                                        ) : (
-                                            cities.map(c => {
-                                                const val = `${c.city}::${c.country_code || ''}`
-                                                const label = c.country_code ? `${c.city}, ${c.country_code}` : c.city
-                                                return <option key={val} value={val}>{label}</option>
-                                            })
+                                    <div ref={citySearchRef} className="city-search-container">
+                                        <input
+                                            type="text"
+                                            placeholder="Search cities..."
+                                            value={citySearchInput}
+                                            onChange={(e) => {
+                                                setCitySearchInput(e.target.value)
+                                                setCitySearchOpen(true)
+                                            }}
+                                            onFocus={() => setCitySearchOpen(true)}
+                                            className="city-search-input"
+                                        />
+                                        {citySearchOpen && (
+                                            <div className="city-search-dropdown">
+                                                {filteredCityOptions.length > 0 ? (
+                                                    filteredCityOptions.map((option) => (
+                                                        <div
+                                                            key={option.value}
+                                                            className="city-search-item"
+                                                            onClick={() => handleCitySelect(option)}
+                                                        >
+                                                            {option.label}
+                                                        </div>
+                                                    ))
+                                                ) : (
+                                                    <div className="city-search-no-results">No cities found</div>
+                                                )}
+                                            </div>
                                         )}
-                                    </select>
+                                    </div>
                                 </div>
                             </div>
-                        ) : (
-                            <div className="form-section">
-                                <div className="input-row">
-                                    <div className="form-group">
-                                        <label className="form-label">LATITUDE</label>
-                                        <input
-                                            type="number"
-                                            step="0.0001"
-                                            min="-90"
-                                            max="90"
-                                            placeholder="-90 to 90"
-                                            value={lat}
-                                            onChange={(e) => setLat(e.target.value)}
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">LONGITUDE</label>
-                                        <input
-                                            type="number"
-                                            step="0.0001"
-                                            min="-180"
-                                            max="180"
-                                            placeholder="-180 to 180"
-                                            value={lon}
-                                            onChange={(e) => setLon(e.target.value)}
-                                        />
-                                    </div>
+                        ) : null}
+
+                        <div className="form-section">
+                            <div className="section-title">Coordinates</div>
+                            <div className="input-row">
+                                <div className="form-group">
+                                    <label className="form-label">LATITUDE</label>
+                                    <input
+                                        type="number"
+                                        step="0.0001"
+                                        min="-90"
+                                        max="90"
+                                        placeholder={useCity ? 'Auto-filled from selected city' : 'Click the map or type a value'}
+                                        value={lat}
+                                        readOnly={useCity}
+                                        onChange={(e) => setLat(e.target.value)}
+                                    />
                                 </div>
+                                <div className="form-group">
+                                    <label className="form-label">LONGITUDE</label>
+                                    <input
+                                        type="number"
+                                        step="0.0001"
+                                        min="-180"
+                                        max="180"
+                                        placeholder={useCity ? 'Auto-filled from selected city' : 'Click the map or type a value'}
+                                        value={lon}
+                                        readOnly={useCity}
+                                        onChange={(e) => setLon(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+                            <div className="route-mode-note">
+                                {useCity
+                                    ? 'Coordinates are filled from the selected city. Switch to coordinates mode to use the map picker.'
+                                    : 'Click the map to fill latitude and longitude automatically, or type them manually.'}
+                            </div>
+                        </div>
+
+                        {!useCity && (
+                            <div className="form-section">
+                                <div className="section-title">Map Picker</div>
+                                <div className="info-note">Click anywhere on the map to insert coordinates into the fields above.</div>
+                                <div ref={locationMapContainerRef} className="location-map" />
                             </div>
                         )}
 
