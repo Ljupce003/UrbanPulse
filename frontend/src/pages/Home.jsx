@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import ShapeGrid from "../components/ShapeGrid.jsx";
 
@@ -71,12 +71,16 @@ export default function Home() {
   const [citiesStatus, setCitiesStatus] = useState('LOADING')
   const [selectedCity, setSelectedCity] = useState(DEFAULT_CITY)
   const [selectedCountry, setSelectedCountry] = useState(DEFAULT_COUNTRY)
+  const [citySearchOpen, setCitySearchOpen] = useState(false)
+  const [citySearchInput, setCitySearchInput] = useState('')
   const [weatherData, setWeatherData] = useState(null)
   const [weatherStatus, setWeatherStatus] = useState('LOADING')
   const [aaqiData, setAaqiData] = useState(null)
   const [aaqiStatus, setAaqiStatus] = useState('LOADING')
   const [trafficData, setTrafficData] = useState(null)
   const [trafficStatus, setTrafficStatus] = useState('LOADING')
+  const citySearchRef = useRef(null)
+  const citySearchInputRef = useRef(null)
 
   const weatherCacheKey = useMemo(
     () => `urbanpulse:weather:${selectedCity}:${selectedCountry || ''}`,
@@ -90,10 +94,22 @@ export default function Home() {
     () => `urbanpulse:traffic:${selectedCity}:${selectedCountry || ''}`,
     [selectedCity, selectedCountry],
   )
-  const selectedCityValue = useMemo(
-    () => `${selectedCity}::${selectedCountry || ''}`,
-    [selectedCity, selectedCountry],
+  const cityOptions = useMemo(
+    () => cities.map((item) => ({
+      value: `${item.city}::${item.country_code || ''}`,
+      label: item.country_code ? `${item.city}, ${item.country_code}` : item.city,
+      city: item.city,
+      country_code: item.country_code || '',
+      lat: item.lat,
+      lon: item.lon,
+    })),
+    [cities],
   )
+  const filteredCityOptions = useMemo(() => {
+    const query = citySearchInput.trim().toLowerCase()
+    if (!query) return cityOptions
+    return cityOptions.filter((item) => item.label.toLowerCase().includes(query))
+  }, [cityOptions, citySearchInput])
 
   const weatherLocationLabel = useMemo(() => {
     const city = weatherData?.location?.city || selectedCity
@@ -128,6 +144,27 @@ export default function Home() {
       JSON.stringify({ city: selectedCity, country_code: selectedCountry || null }),
     )
   }, [selectedCity, selectedCountry])
+
+  useEffect(() => {
+    const selected = cityOptions.find(
+      (item) => item.city === selectedCity && item.country_code === (selectedCountry || ''),
+    )
+    if (selected) {
+      setCitySearchInput(selected.label)
+      return
+    }
+    setCitySearchInput(selectedCountry ? `${selectedCity}, ${selectedCountry}` : selectedCity)
+  }, [selectedCity, selectedCountry, cityOptions])
+
+  useEffect(() => {
+    const onDocMouseDown = (e) => {
+      if (citySearchRef.current && !citySearchRef.current.contains(e.target)) {
+        setCitySearchOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDocMouseDown)
+    return () => document.removeEventListener('mousedown', onDocMouseDown)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -440,6 +477,23 @@ export default function Home() {
     })
   }, [weatherData, weatherStatus, weatherLocationLabel, aaqiData, aaqiStatus, aqiValue, aqiLevel, trafficData, trafficStatus])
 
+  const handleDashboardCitySelect = (option) => {
+    // Give immediate feedback that the selection was accepted and new data is loading.
+    setSelectedCity(option.city)
+    setSelectedCountry(option.country_code || '')
+    setCitySearchInput(option.label)
+    setCitySearchOpen(false)
+
+    setWeatherData(null)
+    setAaqiData(null)
+    setTrafficData(null)
+    setWeatherStatus('LOADING')
+    setAaqiStatus('LOADING')
+    setTrafficStatus('LOADING')
+
+    citySearchInputRef.current?.blur()
+  }
+
   return (
     <div>
       <style>{`
@@ -561,6 +615,58 @@ export default function Home() {
           min-width: 220px;
           font-size: 12px;
           outline: none;
+        }
+        .hero-city-search-container {
+          position: relative;
+          min-width: 260px;
+        }
+        .hero-city-search-input {
+          width: 90%;
+          background: rgba(15,23,42,0.95);
+          color: #e2e8f0;
+          border: 1px solid rgba(59,130,246,0.35);
+          border-radius: 6px;
+          padding: 7px 10px;
+          font-size: 12px;
+          outline: none;
+        }
+        .hero-city-search-input:focus {
+          border-color: rgba(59,130,246,0.6);
+        }
+        .hero-city-search-input:disabled {
+          opacity: 0.65;
+          cursor: not-allowed;
+        }
+        .hero-city-search-dropdown {
+          position: absolute;
+          top: calc(100% + 6px);
+          left: 0;
+          right: 0;
+          max-height: 240px;
+          overflow-y: auto;
+          border: 1px solid rgba(59,130,246,0.2);
+          border-radius: 6px;
+          background: rgba(10,16,28,0.98);
+          box-shadow: 0 12px 24px rgba(0,0,0,0.35);
+          z-index: 30;
+        }
+        .hero-city-search-item {
+          padding: 10px;
+          font-size: 12px;
+          color: #e2e8f0;
+          cursor: pointer;
+          border-bottom: 1px solid rgba(59,130,246,0.08);
+        }
+        .hero-city-search-item:last-child {
+          border-bottom: none;
+        }
+        .hero-city-search-item:hover {
+          background: rgba(59,130,246,0.14);
+        }
+        .hero-city-search-empty {
+          padding: 10px;
+          font-size: 12px;
+          color: rgba(148,163,184,0.75);
         }
 
         /* ── Stat cards ── */
@@ -693,30 +799,47 @@ export default function Home() {
               </div>
               <div className="hero-city-picker" aria-label="Select city from database">
                 <div className="hero-city-picker-label">CITY</div>
-                <select
-                  className="hero-city-picker-select"
-                  value={selectedCityValue}
-                  onChange={(e) => {
-                    const [city, country] = e.target.value.split('::')
-                    setSelectedCity(city)
-                    setSelectedCountry(country || '')
-                  }}
-                  disabled={citiesStatus !== 'READY' || cities.length === 0}
-                >
-                  {cities.length === 0 ? (
-                    <option value={selectedCityValue}>{`${selectedCity}, ${selectedCountry || '--'}`}</option>
-                  ) : (
-                    cities.map((item) => {
-                      const optionValue = `${item.city}::${item.country_code || ''}`
-                      const optionLabel = item.country_code ? `${item.city}, ${item.country_code}` : item.city
-                      return (
-                        <option key={`${optionValue}:${item.lat}:${item.lon}`} value={optionValue}>
-                          {optionLabel}
-                        </option>
-                      )
-                    })
+                <div className="hero-city-search-container" ref={citySearchRef}>
+                  <input
+                    ref={citySearchInputRef}
+                    className="hero-city-search-input"
+                    placeholder="Search city..."
+                    value={citySearchInput}
+                    onChange={(e) => {
+                      setCitySearchInput(e.target.value)
+                      setCitySearchOpen(true)
+                    }}
+                    onFocus={() => {
+                      if (citiesStatus === 'READY' && cityOptions.length > 0) {
+                        setCitySearchOpen(true)
+                      }
+                    }}
+                    onBlur={() => {
+                      setTimeout(() => setCitySearchOpen(false), 80)
+                    }}
+                    disabled={citiesStatus !== 'READY' || cityOptions.length === 0}
+                  />
+                  {citySearchOpen && citiesStatus === 'READY' && (
+                    <div className="hero-city-search-dropdown">
+                      {filteredCityOptions.length > 0 ? (
+                        filteredCityOptions.map((option) => (
+                          <div
+                            key={`${option.value}:${option.lat}:${option.lon}`}
+                            className="hero-city-search-item"
+                            onMouseDown={(e) => {
+                              e.preventDefault()
+                              handleDashboardCitySelect(option)
+                            }}
+                          >
+                            {option.label}
+                          </div>
+                        ))
+                      ) : (
+                        <div className="hero-city-search-empty">No matching cities</div>
+                      )}
+                    </div>
                   )}
-                </select>
+                </div>
               </div>
             </div>
           </div>
