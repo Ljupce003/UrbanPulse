@@ -1,5 +1,17 @@
-import {useEffect, useMemo, useRef, useState} from 'react'
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
+import markerIcon from 'leaflet/dist/images/marker-icon.png'
+import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 import datasetUrl from '../imputed/imputed_dataset.csv?url'
+
+delete L.Icon.Default.prototype._getIconUrl
+L.Icon.Default.mergeOptions({
+    iconRetinaUrl: markerIcon2x,
+    iconUrl: markerIcon,
+    shadowUrl: markerShadow,
+})
 
 const API = (import.meta.env.VITE_API_URL).replace(/\/+$/, '')
 
@@ -349,11 +361,167 @@ function WeatherGrid({weather}) {
 function TrafficPrediction() {
     const [city, setCity]               = useState('Skopje')
     const [countryCode, setCountryCode] = useState('MK')
-    const [lat, setLat]                 = useState('')
-    const [lon, setLon]                 = useState('')
+    const [lat, setLat]                 = useState('41.9981')
+    const [lon, setLon]                 = useState('21.4254')
     const [loading, setLoading]         = useState(false)
     const [error, setError]             = useState(null)
     const [result, setResult]           = useState(null)
+    const [locationMode, setLocationMode] = useState('city')
+    const [cities, setCities]           = useState([])
+    const [citySearchOpen, setCitySearchOpen] = useState(false)
+    const [citySearchInput, setCitySearchInput] = useState('')
+    const citySearchRef = useRef(null)
+    const trafficMapContainerRef = useRef(null)
+    const trafficMapRef = useRef(null)
+    const trafficMarkerRef = useRef(null)
+
+    useEffect(() => {
+        let cancelled = false
+        const fetchCities = async () => {
+            try {
+                const res = await fetch(`${API}/api/weather/cities?limit=200`)
+                const data = await res.json().catch(() => null)
+                if (!cancelled && Array.isArray(data)) {
+                    setCities(data)
+                }
+            } catch (e) {
+                if (!cancelled) console.warn('Failed to fetch cities:', e.message)
+            }
+        }
+        fetchCities()
+        return () => { cancelled = true }
+    }, [])
+
+    const cityOptions = useMemo(() => {
+        return cities.map(c => ({
+            value: `${c.city}::${c.country_code || ''}`,
+            label: c.country_code ? `${c.city}, ${c.country_code}` : c.city,
+            city: c.city,
+            country_code: c.country_code || '',
+            lat: c.lat,
+            lon: c.lon,
+        }))
+    }, [cities])
+
+    const filteredCityOptions = useMemo(() => {
+        const query = citySearchInput.trim().toLowerCase()
+        if (!query) return cityOptions
+        return cityOptions.filter(o => o.label.toLowerCase().includes(query))
+    }, [cityOptions, citySearchInput])
+
+    useEffect(() => {
+        const selected = cityOptions.find(o => `${o.city}::${o.country_code}` === `${city}::${countryCode}`)
+        if (selected) {
+            setCitySearchInput(selected.label)
+        } else {
+            setCitySearchInput(countryCode ? `${city}, ${countryCode}` : city)
+        }
+    }, [city, countryCode, cityOptions])
+
+    useEffect(() => {
+        const onDocMouseDown = (e) => {
+            if (citySearchRef.current && !citySearchRef.current.contains(e.target)) {
+                setCitySearchOpen(false)
+            }
+        }
+        document.addEventListener('mousedown', onDocMouseDown)
+        return () => document.removeEventListener('mousedown', onDocMouseDown)
+    }, [])
+
+    const trafficLocationCenter = useMemo(() => {
+        const latNum = Number(lat)
+        const lonNum = Number(lon)
+        if (Number.isFinite(latNum) && Number.isFinite(lonNum)) return [latNum, lonNum]
+        if (cities.length > 0) return [Number(cities[0].lat), Number(cities[0].lon)]
+        return [20, 0]
+    }, [lat, lon, cities])
+
+    const clearTrafficMarker = useCallback(() => {
+        if (trafficMarkerRef.current) {
+            trafficMarkerRef.current.remove()
+            trafficMarkerRef.current = null
+        }
+    }, [])
+
+    const syncTrafficMap = useCallback(() => {
+        if (!trafficMapRef.current) return
+        const map = trafficMapRef.current
+        const latNum = Number(lat)
+        const lonNum = Number(lon)
+        clearTrafficMarker()
+        if (Number.isFinite(latNum) && Number.isFinite(lonNum)) {
+            trafficMarkerRef.current = L.marker([latNum, lonNum]).addTo(map)
+            map.setView([latNum, lonNum], Math.max(map.getZoom(), 10), {animate: true})
+        } else {
+            map.setView(trafficLocationCenter, 6, {animate: false})
+        }
+    }, [clearTrafficMarker, lat, lon, trafficLocationCenter])
+
+    useEffect(() => {
+        // Clean up map when leaving coords mode
+        if (locationMode !== 'coords') {
+            if (trafficMapRef.current) {
+                trafficMapRef.current.remove()
+                trafficMapRef.current = null
+            }
+            return
+        }
+
+        // Initialize map when entering coords mode
+        if (!trafficMapContainerRef.current) return
+
+        if (!trafficMapRef.current) {
+            trafficMapRef.current = L.map(trafficMapContainerRef.current, {
+                zoomControl: true,
+                scrollWheelZoom: true,
+            }).setView(trafficLocationCenter, 6)
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors',
+                maxZoom: 19,
+            }).addTo(trafficMapRef.current)
+
+            trafficMapRef.current.on('click', (e) => {
+                const {lat, lng} = e.latlng
+                setLat(lat.toFixed(6))
+                setLon(lng.toFixed(6))
+            })
+        } else {
+            // Ensure map is properly sized and synced when tab becomes visible
+            setTimeout(() => {
+                if (trafficMapRef.current) {
+                    trafficMapRef.current.invalidateSize()
+                    trafficMapRef.current.setView(trafficLocationCenter, trafficMapRef.current.getZoom(), {animate: false})
+                }
+            }, 0)
+        }
+
+        syncTrafficMap()
+
+        return () => {
+            // Cleanup on unmount
+            if (trafficMapRef.current) {
+                trafficMapRef.current.remove()
+                trafficMapRef.current = null
+            }
+        }
+    }, [locationMode, trafficLocationCenter, syncTrafficMap])
+
+    useEffect(() => {
+        return () => {
+            if (trafficMapRef.current) {
+                trafficMapRef.current.remove()
+                trafficMapRef.current = null
+            }
+        }
+    }, [])
+
+    const handleTrafficCitySelect = (option) => {
+        setCity(option.city)
+        setCountryCode(option.country_code || '')
+        setCitySearchInput(option.label)
+        setCitySearchOpen(false)
+    }
 
     const run = async () => {
         setLoading(true)
@@ -398,23 +566,122 @@ function TrafficPrediction() {
                 {/* Input */}
                 <div className="card">
                     <div className="card-title">LOCATION</div>
-                    <div className="fields-grid" style={{gridTemplateColumns:'1fr 1fr'}}>
-                        <div className="group">
-                            <label className="label">CITY</label>
-                            <input value={city} onChange={e => setCity(e.target.value)} placeholder="Skopje"/>
+                    <div style={{marginBottom: 14}}>
+                        <div style={{display: 'flex', gap: 8, marginBottom: 10}}>
+                            <button
+                                className={`tab ${locationMode === 'city' ? 'active' : ''}`}
+                                onClick={() => setLocationMode('city')}
+                            >
+                                CITY PICKER
+                            </button>
+                            <button
+                                className={`tab ${locationMode === 'coords' ? 'active' : ''}`}
+                                onClick={() => setLocationMode('coords')}
+                            >
+                                COORDINATES
+                            </button>
                         </div>
-                        <div className="group">
-                            <label className="label">COUNTRY CODE</label>
-                            <input value={countryCode} onChange={e => setCountryCode(e.target.value)} placeholder="MK" style={{textTransform:'uppercase'}}/>
-                        </div>
-                        <div className="group">
-                            <label className="label">LAT (OPTIONAL)</label>
-                            <input type="number" step="any" value={lat} onChange={e => setLat(e.target.value)} placeholder="41.9981"/>
-                        </div>
-                        <div className="group">
-                            <label className="label">LON (OPTIONAL)</label>
-                            <input type="number" step="any" value={lon} onChange={e => setLon(e.target.value)} placeholder="21.4254"/>
-                        </div>
+
+                        {locationMode === 'city' ? (
+                            <div className="group" style={{marginBottom: 10}}>
+                                <label className="label">SELECT CITY</label>
+                                <div ref={citySearchRef} style={{position: 'relative'}}>
+                                    <input
+                                        type="text"
+                                        placeholder="Search cities..."
+                                        value={citySearchInput}
+                                        onChange={(e) => {
+                                            setCitySearchInput(e.target.value)
+                                            setCitySearchOpen(true)
+                                        }}
+                                        onFocus={() => setCitySearchOpen(true)}
+                                        onBlur={() => setTimeout(() => setCitySearchOpen(false), 80)}
+                                    />
+                                    {citySearchOpen && (
+                                        <div style={{
+                                            position: 'absolute',
+                                            top: 'calc(100% + 6px)',
+                                            left: 0,
+                                            right: 0,
+                                            maxHeight: 240,
+                                            overflowY: 'auto',
+                                            border: '1px solid rgba(59,130,246,0.2)',
+                                            borderRadius: 6,
+                                            background: 'rgba(10,16,28,0.98)',
+                                            boxShadow: '0 12px 24px rgba(0,0,0,0.35)',
+                                            zIndex: 30,
+                                        }}>
+                                            {filteredCityOptions.length > 0 ? (
+                                                filteredCityOptions.map((option) => (
+                                                    <div
+                                                        key={`${option.value}:${option.lat}:${option.lon}`}
+                                                        style={{
+                                                            padding: 10,
+                                                            fontSize: 12,
+                                                            color: '#e2e8f0',
+                                                            cursor: 'pointer',
+                                                            borderBottom: '1px solid rgba(59,130,246,0.08)',
+                                                        }}
+                                                        onMouseDown={(e) => {
+                                                            e.preventDefault()
+                                                            handleTrafficCitySelect(option)
+                                                        }}
+                                                        onMouseEnter={(e) => e.target.style.background = 'rgba(59,130,246,0.14)'}
+                                                        onMouseLeave={(e) => e.target.style.background = 'transparent'}
+                                                    >
+                                                        {option.label}
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <div style={{padding: 10, fontSize: 12, color: 'rgba(148,163,184,0.75)'}}>
+                                                    No matching cities
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        ) : (
+                            <>
+                                <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10}}>
+                                    <div className="group">
+                                        <label className="label">LATITUDE</label>
+                                        <input
+                                            type="number"
+                                            step="0.0001"
+                                            value={lat}
+                                            onChange={(e) => setLat(e.target.value)}
+                                            placeholder="41.9981"
+                                        />
+                                    </div>
+                                    <div className="group">
+                                        <label className="label">LONGITUDE</label>
+                                        <input
+                                            type="number"
+                                            step="0.0001"
+                                            value={lon}
+                                            onChange={(e) => setLon(e.target.value)}
+                                            placeholder="21.4254"
+                                        />
+                                    </div>
+                                </div>
+                                <div style={{
+                                    fontSize: 11,
+                                    color: 'rgba(148,163,184,0.6)',
+                                    marginBottom: 10,
+                                    lineHeight: 1.5
+                                }}>
+                                    Click the map below to set coordinates, or type them manually.
+                                </div>
+                                <div ref={trafficMapContainerRef} style={{
+                                    height: 280,
+                                    border: '1px solid rgba(59,130,246,0.18)',
+                                    borderRadius: 4,
+                                    overflow: 'hidden',
+                                    background: 'rgba(10,16,28,0.8)',
+                                }}/>
+                            </>
+                        )}
                     </div>
 
                     <div className="card-title" style={{marginTop:20}}>MODEL INFO</div>
